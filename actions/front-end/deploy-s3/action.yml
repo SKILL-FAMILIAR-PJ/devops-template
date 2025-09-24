@@ -1,35 +1,32 @@
-name: 'Deploy to S3'
-description: 'Deploy artifacts to S3 with tag and environment folders'
+name: "Deploy to S3"
+description: "Deploy artifacts to S3 with tag and environment folders (environment auto-detected from tag)"
 
 inputs:
   artifact-name:
-    description: 'Name of the artifact to download'
+    description: "Name of the artifact to download"
     required: true
   aws-access-key-id:
-    description: 'AWS Access Key ID'
+    description: "AWS Access Key ID"
     required: true
   aws-secret-access-key:
-    description: 'AWS Secret Access Key'
+    description: "AWS Secret Access Key"
     required: true
   aws-region:
-    description: 'AWS Region'
+    description: "AWS Region"
     required: true
   s3-bucket:
-    description: 'S3 Bucket name'
+    description: "S3 Bucket name"
     required: true
   s3-folder:
-    description: 'S3 base folder path'
-    required: true
-  environment:
-    description: 'Environment name (DEV, QA, etc.)'
+    description: "S3 base folder path"
     required: true
   source-path:
-    description: 'Local path to sync'
+    description: "Local path to sync"
     required: false
-    default: './storybook'
+    default: "./storybook"
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
@@ -49,10 +46,19 @@ runs:
       run: |
         TAG_NAME=${GITHUB_REF#refs/tags/}
 
+        # Extract environment from tag (e.g., v1.0.0-DEV.1 -> DEV, v1.0.0-QA.M1 -> QA)
+        if [[ $TAG_NAME =~ -([A-Z]+)\. ]]; then
+          ENVIRONMENT="${BASH_REMATCH[1]}"
+          echo "Extracted environment: $ENVIRONMENT"
+        else
+          ENVIRONMENT="PROD"
+          echo "No environment suffix found, defaulting to: $ENVIRONMENT"
+        fi
+
         # Deploy to tag-specific folder
         aws s3 sync ${{ inputs.source-path }} s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$TAG_NAME/ --delete
         echo "Deployed to tag-specific folder: s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$TAG_NAME/"
 
         # Deploy to environment folder
-        aws s3 sync ${{ inputs.source-path }} s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/${{ inputs.environment }}/ --delete
-        echo "Deployed to ${{ inputs.environment }} folder: s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/${{ inputs.environment }}/"
+        aws s3 sync ${{ inputs.source-path }} s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$ENVIRONMENT/ --delete
+        echo "Deployed to $ENVIRONMENT folder: s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$ENVIRONMENT/"

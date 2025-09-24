@@ -4,8 +4,7 @@ A comprehensive collection of reusable GitHub Actions workflows and composite ac
 
 ## 🚀 Features
 
-- **Automated Quality Gates**: Lint, type-check, and SonarQube analysis
-- **Semantic Versioning**: Automated releases with conventional commits
+- **Automated Quality Gates**: Lint, type-check, and SonarQube analyjobs
 - **Multi-Environment Deployment**: Support for dev/qa/stg/prod environments
 - **Storybook Integration**: Build and deploy Storybook to S3/CloudFront
 - **Teams Notifications**: Deployment status notifications to Microsoft Teams
@@ -112,17 +111,20 @@ Builds Storybook and uploads artifacts with optional version updates.
 
 Deploys artifacts to S3 with tag-specific and environment-specific folders.
 
+````yaml
+### [`deploy-s3`](actions/front-end/deploy-s3/action.yml)
+Deploys artifacts to S3 with tag-specific and environment-specific folders. Environment is automatically detected from the Git tag (e.g., `v1.0.0-DEV.1` → `DEV`, `v1.0.0-QA.M1` → `QA`).
+
 ```yaml
 - uses: SKILL-FAMILIAR-PJ/devops-template/actions/front-end/deploy-s3@main
   with:
-    artifact-name: "storybook-static"
+    artifact-name: 'storybook-static'
     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    aws-region: "us-east-1"
-    s3-bucket: "my-deployment-bucket"
-    s3-folder: "storybook"
-    environment: "DEV"
-```
+    aws-region: 'us-east-1'
+    s3-bucket: 'my-deployment-bucket'
+    s3-folder: 'storybook'
+````
 
 **Inputs:**
 
@@ -132,8 +134,13 @@ Deploys artifacts to S3 with tag-specific and environment-specific folders.
 - `aws-region` (required): AWS Region
 - `s3-bucket` (required): S3 Bucket name
 - `s3-folder` (required): S3 base folder path
-- `environment` (required): Environment name (DEV, QA, etc.)
 - `source-path` (optional): Local path to sync (default: './storybook')
+
+**Environment Detection:**
+
+- Tags like `v1.0.0-DEV.1` will deploy to `DEV` environment folder
+- Tags like `v1.0.0-QA.M1` will deploy to `QA` environment folder
+- Tags without environment suffix (e.g., `v1.0.0`) will deploy to `PROD` environment folder
 
 ### [`semantic-release`](actions/front-end/semantic-release/action.yml)
 
@@ -264,7 +271,6 @@ jobs:
   deploy-dev:
     uses: SKILL-FAMILIAR-PJ/devops-template/.github/workflows/front-end/tag-deployment.yml@main
     with:
-      environment: "dev"
       tag-pattern: "v*"
       s3-bucket: "my-storybook-bucket"
       s3-folder: "storybook"
@@ -277,9 +283,18 @@ jobs:
 
 **Inputs:**
 
-- `environment` (required): Environment name (dev, qa, prod)
-- `tag-pattern` (optional): Git tag pattern to trigger deployment
+- `tag-pattern` (required): Git tag pattern to trigger deployment
 - `s3-bucket` (required): S3 bucket for deployment
+- `s3-folder` (optional): S3 folder path
+- `cf-domain` (required): CloudFront domain for deployment notifications
+- `aws-region` (optional): AWS region (default: 'us-east-1')
+- `node-version` (optional): Node.js version
+- `actions-repo` (optional): Repository containing reusable actions
+- `actions-ref` (optional): Ref of actions repository
+
+**Environment Detection:**
+Environment is automatically detected from the Git tag and used for both S3 deployment folders and Teams notifications.
+
 - `s3-folder` (required): S3 folder path
 - `cf-domain` (required): CloudFront domain
 - `node-version` (optional): Node.js version
@@ -372,10 +387,10 @@ jobs:
 
   # Development Deployment
   deploy-dev:
-    if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref, 'dev')
+    if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref, 'DEV')
     uses: SKILL-FAMILIAR-PJ/devops-template/.github/workflows/front-end/tag-deployment.yml@main
     with:
-      environment: "dev"
+      tag-pattern: "v*"
       s3-bucket: "my-dev-bucket"
       s3-folder: "storybook"
       cf-domain: "https://dev.example.com"
@@ -386,10 +401,10 @@ jobs:
 
   # Production Deployment
   deploy-prod:
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'dev') && !contains(github.ref, 'qa')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'DEV') && !contains(github.ref, 'QA')
     uses: SKILL-FAMILIAR-PJ/devops-template/.github/workflows/front-end/tag-deployment.yml@main
     with:
-      environment: "prod"
+      tag-pattern: "v*"
       s3-bucket: "my-prod-bucket"
       s3-folder: "storybook"
       cf-domain: "https://prod.example.com"
@@ -421,18 +436,25 @@ jobs:
 
 ## 🏗️ S3 Deployment Structure
 
-The deployment creates the following S3 structure:
+The deployment creates the following S3 structure based on Git tags:
 
 ```
 s3://your-bucket/
 ├── storybook/
-│   ├── DEV/
-│   │   └── v1.2.3-dev.1/
-│   ├── QA/
-│   │   └── v1.2.3-qa.1/
-│   └── PROD/
-│       └── v1.2.3/
+│   ├── DEV/                    # From tags like v1.2.3-DEV.1
+│   ├── QA/                     # From tags like v1.2.3-QA.M1
+│   ├── PROD/                   # From tags like v1.2.3
+│   ├── v1.2.3-DEV.1/          # Tag-specific folder
+│   ├── v1.2.3-QA.M1/          # Tag-specific folder
+│   └── v1.2.3/                # Tag-specific folder
 ```
+
+**Environment Detection Logic:**
+
+- Tags with `-DEV.` → DEV environment
+- Tags with `-QA.` → QA environment
+- Tags without environment suffix → PROD environment
+- Each deployment creates both environment folder and tag-specific folder
 
 ## 🔄 Workflow Triggers
 
@@ -451,25 +473,24 @@ s3://your-bucket/
 - Triggered on: Git tag creation (matching pattern)
 - Actions: Build Storybook → Deploy to S3 → Notify Teams
 
-## 🎯 Best Practices
+## �️ Tag Naming Convention
+
+For proper environment detection, use the following tag patterns:
+
+- **Development**: `v1.0.0-DEV.1`, `v2.1.0-DEV.5`
+- **QA/Testing**: `v1.0.0-QA.M1`, `v2.1.0-QA.M3`
+- **Production**: `v1.0.0`, `v2.1.0`
+
+The regex pattern `-([A-Z]+)\.` is used to extract the environment from tags.
+
+## �🎯 Best Practices
 
 1. **Use conventional commits** for automatic semantic versioning
-2. **Set up branch protection rules** requiring PR quality gates
-3. **Use different AWS credentials** for each environment
-4. **Configure SonarQube quality gates** for code quality enforcement
-5. **Use environment-specific secrets** for secure deployments
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with a sample project
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+2. **Follow the tag naming convention** for proper environment detection
+3. **Set up branch protection rules** requiring PR quality gates
+4. **Use different AWS credentials** for each environment
+5. **Configure SonarQube quality gates** for code quality enforcement
+6. **Use environment-specific secrets** for secure deployments
 
 ---
 

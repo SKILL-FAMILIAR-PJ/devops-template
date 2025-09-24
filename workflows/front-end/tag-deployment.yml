@@ -3,58 +3,58 @@ name: Reusable Tag Deployment
 on:
   workflow_call:
     inputs:
-      environment:
-        description: 'Deployment environment (dev, qa, prod)'
-        required: true
-        type: string
       tag-pattern:
-        description: 'Git tag pattern to trigger deployment'
+        description: "Git tag pattern to trigger deployment"
         required: true
         type: string
       node-version:
-        description: 'Node.js version'
+        description: "Node.js version"
         required: false
         type: string
-        default: '20'
+        default: "20"
       install-command:
-        description: 'Package installation command'
+        description: "Package installation command"
         required: false
         type: string
-        default: 'yarn install --immutable'
+        default: "yarn install --immutable"
       build-command:
-        description: 'Build command'
+        description: "Build command"
         required: false
         type: string
-        default: 'yarn build-storybook'
+        default: "yarn build-storybook"
       build-path:
-        description: 'Build output directory'
+        description: "Build output directory"
         required: false
         type: string
-        default: 'storybook-static'
+        default: "storybook-static"
       s3-bucket:
-        description: 'S3 bucket name'
+        description: "S3 bucket name"
         required: true
         type: string
       s3-folder:
-        description: 'S3 folder path'
+        description: "S3 folder path"
         required: false
         type: string
-        default: ''
+        default: ""
+      aws-region:
+        description: "AWS region"
+        required: false
+        type: string
+        default: "us-east-1"
+      cf-domain:
+        description: "CloudFront domain for deployment notifications"
+        required: true
+        type: string
       actions-repo:
-        description: 'Repository containing reusable actions'
+        description: "Repository containing reusable actions"
         required: false
         type: string
-        default: 'SKILL-FAMILIAR-PJ/devops-template'
+        default: "SKILL-FAMILIAR-PJ/devops-template"
       actions-ref:
-        description: 'Ref of actions repository'
+        description: "Ref of actions repository"
         required: false
         type: string
-        default: 'main'
-      teams-title:
-        description: 'Teams notification title'
-        required: false
-        type: string
-        default: 'Deployment Notification'
+        default: "main"
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true
@@ -130,13 +130,15 @@ jobs:
           path: ${{ inputs.build-path }}
 
       - name: Deploy to S3
-        uses: ${{ inputs.actions-repo }}/deploy-s3@${{ inputs.actions-ref }}
+        uses: ${{ inputs.actions-repo }}/actions/front-end/deploy-s3@${{ inputs.actions-ref }}
         with:
+          artifact-name: storybook-static
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws-region }}
           s3-bucket: ${{ inputs.s3-bucket }}
           s3-folder: ${{ inputs.s3-folder }}
-          build-path: ${{ inputs.build-path }}
+          source-path: ${{ inputs.build-path }}
 
   notify:
     name: Notify Deployment
@@ -146,14 +148,24 @@ jobs:
     if: always() && secrets.TEAMS_WEBHOOK_URL != ''
 
     steps:
+      - name: Extract environment from tag
+        id: env
+        shell: bash
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          if [[ $TAG_NAME =~ -([A-Z]+)\. ]]; then
+            ENVIRONMENT="${BASH_REMATCH[1]}"
+            echo "Extracted environment: $ENVIRONMENT"
+          else
+            ENVIRONMENT="PROD"
+            echo "No environment suffix found, defaulting to: $ENVIRONMENT"
+          fi
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+
       - name: Notify Teams
-        uses: ${{ inputs.actions-repo }}/notify-teams@${{ inputs.actions-ref }}
+        uses: ${{ inputs.actions-repo }}/actions/common/notify-teams@${{ inputs.actions-ref }}
         with:
           webhook-url: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          title: ${{ inputs.teams-title }}
-          environment: ${{ inputs.environment }}
-          version: ${{ needs.build.outputs.version }}
-          commit-hash: ${{ needs.build.outputs.commit-hash }}
-          commit-message: ${{ needs.build.outputs.commit-message }}
-          deployment-status: ${{ needs.deploy.result }}
-          repository: ${{ github.repository }}
+          cf-domain: ${{ inputs.cf-domain }}
+          title-prefix: "✅ Deployed to ${{ steps.env.outputs.environment }}"
+          theme-color: "2EB886"
