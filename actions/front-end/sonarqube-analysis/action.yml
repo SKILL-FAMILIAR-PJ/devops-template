@@ -1,39 +1,40 @@
-name: 'SonarQube Analysis'
-description: 'Run SonarQube analysis with quality gate check'
+name: "SonarQube Analysis"
+description: "Run SonarQube analysis with quality gate check"
 
 inputs:
   sonar-token:
-    description: 'SonarQube authentication token'
+    description: "SonarQube authentication token"
     required: true
   sonar-host-url:
-    description: 'SonarQube server URL'
+    description: "SonarQube server URL"
     required: true
   wait-for-quality-gate:
-    description: 'Whether to wait for quality gate results'
+    description: "Whether to wait for quality gate results"
     required: false
-    default: 'false'
+    default: "false"
   quality-gate-timeout:
-    description: 'Quality gate timeout in minutes'
+    description: "Quality gate timeout in minutes"
     required: false
-    default: '5'
+    default: "5"
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Cache Sonar analyzers
       uses: actions/cache@v4
       with:
-        path: ~/.sonar/cache
-        key: sonar-${{ runner.os }}-${{ hashFiles('**/sonar-project.properties') }}
+        path: $HOME/.sonar/cache
+        key: sonar-analyzers-${{ runner.os }}-${{ vars.CI_SERVICE_SONAR_HOST_URL }}-${{ hashFiles('**/sonar-project.properties') }}
         restore-keys: |
-          sonar-${{ runner.os }}-
+          sonar-analyzers-${{ runner.os }}-${{ vars.CI_SERVICE_SONAR_HOST_URL }}-
+          sonar-analyzers-${{ runner.os }}-
 
     - name: SonarQube Scan
       uses: SonarSource/sonarqube-scan-action@v4
       env:
         SONAR_TOKEN: ${{ inputs.sonar-token }}
         SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
-        SONAR_USER_HOME: ~/.sonar
+        SONAR_USER_HOME: $HOME/.sonar
       with:
         args: >
           -Dsonar.qualitygate.wait=${{ inputs.wait-for-quality-gate }}
