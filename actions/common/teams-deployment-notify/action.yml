@@ -1,36 +1,27 @@
-name: 'Notify Teams'
-description: 'Send deployment notification to Microsoft Teams'
+name: "Notify Deployment Teams"
+description: "Send deployment notification to Microsoft Teams"
 
 inputs:
   webhook-url:
-    description: 'Teams webhook URL'
+    description: "Teams webhook URL"
     required: true
-  cf-domain:
-    description: 'CloudFront domain for deployment URL'
+  deployment-url:
+    description: "CloudFront domain for deployment URL"
     required: true
-  title-prefix:
-    description: 'Prefix for notification title'
-    required: false
-    default: '✅ Deployed'
-  theme-color:
-    description: 'Theme color for the Teams card'
-    required: false
-    default: '2EB886'
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Resolve commit info
       id: commit
       shell: bash
       run: |
-        # If this run was triggered by a tag, resolve the commit behind the tag
         if [ "${{ github.ref_type }}" = "tag" ]; then
           COMMIT_SHA="$(git rev-list -n 1 $GITHUB_REF_NAME)"
         else
           COMMIT_SHA="${GITHUB_SHA}"
         fi
-        COMMIT_SUBJECT="$(git show -s --format=%s "$COMMIT_SHA")"   # one-line subject
+        COMMIT_SUBJECT="$(git show -s --format=%s "$COMMIT_SHA")"
         echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
         echo "subject<<EOF" >> "$GITHUB_OUTPUT"
         echo "$COMMIT_SUBJECT" >> "$GITHUB_OUTPUT"
@@ -40,12 +31,12 @@ runs:
       shell: bash
       env:
         TEAMS_WEBHOOK_URL: ${{ inputs.webhook-url }}
-        CF_DOMAIN: ${{ inputs.cf-domain }}
+        DEPLOYMENT_URL: ${{ inputs.deployment-url }}
         TITLE_PREFIX: ${{ inputs.title-prefix }}
         THEME_COLOR: ${{ inputs.theme-color }}
       run: |
         TAG="${GITHUB_REF_NAME}"
-        URL="${CF_DOMAIN}/${TAG}/"
+        URL="${DEPLOYMENT_URL}/${TAG}/"
 
         payload=$(jq -n \
           --arg title "$TITLE_PREFIX $TAG" \
