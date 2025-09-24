@@ -1,0 +1,81 @@
+name: 'Notify Teams'
+description: 'Send deployment notification to Microsoft Teams'
+
+inputs:
+  webhook-url:
+    description: 'Teams webhook URL'
+    required: true
+  cf-domain:
+    description: 'CloudFront domain for deployment URL'
+    required: true
+  title-prefix:
+    description: 'Prefix for notification title'
+    required: false
+    default: '✅ Deployed'
+  theme-color:
+    description: 'Theme color for the Teams card'
+    required: false
+    default: '2EB886'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve commit info
+      id: commit
+      shell: bash
+      run: |
+        # If this run was triggered by a tag, resolve the commit behind the tag
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          COMMIT_SHA="$(git rev-list -n 1 $GITHUB_REF_NAME)"
+        else
+          COMMIT_SHA="${GITHUB_SHA}"
+        fi
+        COMMIT_SUBJECT="$(git show -s --format=%s "$COMMIT_SHA")"   # one-line subject
+        echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+        echo "subject<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$COMMIT_SUBJECT" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+    - name: Send Teams notification
+      shell: bash
+      env:
+        TEAMS_WEBHOOK_URL: ${{ inputs.webhook-url }}
+        CF_DOMAIN: ${{ inputs.cf-domain }}
+        TITLE_PREFIX: ${{ inputs.title-prefix }}
+        THEME_COLOR: ${{ inputs.theme-color }}
+      run: |
+        TAG="${GITHUB_REF_NAME}"
+        URL="${CF_DOMAIN}/${TAG}/"
+
+        payload=$(jq -n \
+          --arg title "$TITLE_PREFIX $TAG" \
+          --arg url   "$URL" \
+          --arg repo  "${{ github.repository }}" \
+          --arg sha   "${{ steps.commit.outputs.sha }}" \
+          --arg actor "${{ github.actor }}" \
+          --arg msg   "${{ steps.commit.outputs.subject }}" \
+          --arg color "$THEME_COLOR" \
+          '{
+            "@type":"MessageCard",
+            "@context":"https://schema.org/extensions",
+            "themeColor":$color,
+            "summary":"Deployment success",
+            "title": $title,
+            "sections": [{
+              "facts": [
+                {"name":"Repository","value":$repo},
+                {"name":"Commit","value":$sha},
+                {"name":"Message","value":$msg},
+                {"name":"Actor","value":$actor},
+                {"name":"URL","value":$url}
+              ]
+            }],
+            "potentialAction": [{
+              "@type":"OpenUri",
+              "name":"Open Deployment",
+              "targets":[{"os":"default","uri":$url}]
+            }]
+          }')
+
+        curl -sS -X POST -H 'Content-Type: application/json' \
+          -d "$payload" "$TEAMS_WEBHOOK_URL"

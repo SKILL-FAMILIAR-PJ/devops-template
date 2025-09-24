@@ -1,0 +1,58 @@
+name: 'Deploy to S3'
+description: 'Deploy artifacts to S3 with tag and environment folders'
+
+inputs:
+  artifact-name:
+    description: 'Name of the artifact to download'
+    required: true
+  aws-access-key-id:
+    description: 'AWS Access Key ID'
+    required: true
+  aws-secret-access-key:
+    description: 'AWS Secret Access Key'
+    required: true
+  aws-region:
+    description: 'AWS Region'
+    required: true
+  s3-bucket:
+    description: 'S3 Bucket name'
+    required: true
+  s3-folder:
+    description: 'S3 base folder path'
+    required: true
+  environment:
+    description: 'Environment name (DEV, QA, etc.)'
+    required: true
+  source-path:
+    description: 'Local path to sync'
+    required: false
+    default: './storybook'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.source-path }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Deploy to S3
+      shell: bash
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+
+        # Deploy to tag-specific folder
+        aws s3 sync ${{ inputs.source-path }} s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$TAG_NAME/ --delete
+        echo "Deployed to tag-specific folder: s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$TAG_NAME/"
+
+        # Deploy to environment folder
+        aws s3 sync ${{ inputs.source-path }} s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/${{ inputs.environment }}/ --delete
+        echo "Deployed to ${{ inputs.environment }} folder: s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/${{ inputs.environment }}/"

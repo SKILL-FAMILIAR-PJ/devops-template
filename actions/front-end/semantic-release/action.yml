@@ -1,0 +1,26 @@
+name: 'Semantic Release'
+description: 'Run semantic release to create tags and releases'
+
+inputs:
+  github-token:
+    description: 'GitHub token for creating releases'
+    required: true
+  release-command:
+    description: 'Command to run semantic release'
+    required: false
+    default: 'npx semantic-release'
+  working-directory:
+    description: 'Working directory for the release'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Semantic Release
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        HUSKY: 0
+      run: ${{ inputs.release-command }}

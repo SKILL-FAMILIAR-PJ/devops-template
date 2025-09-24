@@ -1,0 +1,53 @@
+name: 'Build and Upload Storybook'
+description: 'Build Storybook with version update and upload artifacts'
+
+inputs:
+  artifact-name:
+    description: 'Name for the build artifact'
+    required: true
+  retention-days:
+    description: 'Artifact retention days'
+    required: false
+    default: '1'
+  update-version:
+    description: 'Whether to update package.json version from tag'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Update package.json version
+      if: inputs.update-version == 'true'
+      shell: bash
+      run: |
+        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        echo "Tag version: $TAG_VERSION"
+
+        # Get current version for comparison
+        CURRENT_VERSION=$(node -p "require('./package.json').version")
+        echo "Current version: $CURRENT_VERSION"
+
+        # Check if version needs to be updated
+        if [ "$CURRENT_VERSION" != "$TAG_VERSION" ]; then
+          echo "Updating version from $CURRENT_VERSION to $TAG_VERSION"
+          npm version $TAG_VERSION --no-git-tag-version
+          echo "Version updated successfully"
+        else
+          echo "Version is already $TAG_VERSION, no update needed"
+        fi
+
+        # Verify the final version
+        FINAL_VERSION=$(node -p "require('./package.json').version")
+        echo "Final version in package.json: $FINAL_VERSION"
+
+    - name: Build Storybook
+      shell: bash
+      run: yarn run build:storybook
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: storybook/
+        retention-days: ${{ inputs.retention-days }}

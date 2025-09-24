@@ -1,0 +1,33 @@
+name: 'Lint and Type Check'
+description: 'Run ESLint and TypeScript type checking'
+
+inputs:
+  lint-command:
+    description: 'Command to run linting'
+    required: false
+    default: 'yarn lint'
+  typecheck-command:
+    description: 'Command to run type checking'
+    required: false
+    default: 'yarn tsc'
+  skip-lint:
+    description: 'Skip linting step'
+    required: false
+    default: 'false'
+  skip-typecheck:
+    description: 'Skip type checking step'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run ESLint
+      if: inputs.skip-lint != 'true'
+      shell: bash
+      run: ${{ inputs.lint-command }}
+
+    - name: Run TypeScript check
+      if: inputs.skip-typecheck != 'true'
+      shell: bash
+      run: ${{ inputs.typecheck-command }}

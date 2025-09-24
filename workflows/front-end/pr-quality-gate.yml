@@ -1,0 +1,99 @@
+name: Reusable PR Quality Gate
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version'
+        required: false
+        type: string
+        default: '20'
+      install-command:
+        description: 'Package installation command'
+        required: false
+        type: string
+        default: 'yarn install --immutable'
+      lint-command:
+        description: 'Linting command'
+        required: false
+        type: string
+        default: 'yarn lint'
+      typecheck-command:
+        description: 'Type checking command'
+        required: false
+        type: string
+        default: 'yarn tsc'
+      actions-repo:
+        description: 'Repository containing reusable actions'
+        required: false
+        type: string
+        default: 'SKILL-FAMILIAR-PJ/devops-template'
+      actions-ref:
+        description: 'Ref of actions repository'
+        required: false
+        type: string
+        default: 'main'
+      skip-sonarqube:
+        description: 'Skip SonarQube analysis'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      SONAR_TOKEN:
+        required: false
+      SONAR_HOST_URL:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  packages: read
+  issues: write
+
+jobs:
+  lint-and-type-check:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js Environment
+        uses: ${{ inputs.actions-repo }}/setup-node@${{ inputs.actions-ref }}
+        with:
+          node-version: ${{ inputs.node-version }}
+          install-command: ${{ inputs.install-command }}
+
+      - name: Lint and Type Check
+        uses: ${{ inputs.actions-repo }}/lint-and-typecheck@${{ inputs.actions-ref }}
+        with:
+          lint-command: ${{ inputs.lint-command }}
+          typecheck-command: ${{ inputs.typecheck-command }}
+
+  sonarqube-analysis:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: inputs.skip-sonarqube == false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js Environment
+        uses: ${{ inputs.actions-repo }}/setup-node@${{ inputs.actions-ref }}
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: SonarQube Analysis
+        uses: ${{ inputs.actions-repo }}/sonarqube-analysis@${{ inputs.actions-ref }}
+        with:
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
+          sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
+          wait-for-quality-gate: 'false'
