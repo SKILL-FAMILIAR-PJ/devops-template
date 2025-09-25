@@ -17,8 +17,14 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Setup Node.js Environment
+      uses: SKILL-FAMILIAR-PJ/devops-template/actions/front-end/setup-node@main
+      with:
+        node-version: 20
+        install-command: yarn install --immutable
+
     - name: Download build artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         name: ${{ inputs.artifact-name }}
 
