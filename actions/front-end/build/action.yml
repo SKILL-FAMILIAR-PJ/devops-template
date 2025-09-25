@@ -57,5 +57,6 @@ runs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}
-        path: ${{ inputs.artifact-path }}
+        path: |
+          ${{ inputs.artifact-paths }}
         retention-days: ${{ inputs.retention-days }}

@@ -1,0 +1,61 @@
+name: "Deploy to NPM Registry"
+description: "Download artifacts and deploy package to NPM registry using yarn npm publish"
+
+inputs:
+  artifact-name:
+    description: "Name of the artifact to download"
+    required: true
+  access:
+    description: "Package access level (public or restricted)"
+    required: false
+    default: "public"
+  dry-run:
+    description: "Perform a dry run without actually publishing"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+
+    - name: Publish to registry (dry-run)
+      if: inputs.dry-run == 'true'
+      shell: bash
+      run: |
+        # Extract tag from GitHub ref
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+
+        # Determine npm tag based on GitHub tag
+        if [[ $TAG_NAME =~ -([A-Z]+)\. ]]; then
+          NPM_TAG=$(echo "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+          echo "Extracted environment tag: $NPM_TAG"
+        else
+          NPM_TAG="latest"
+          echo "No environment suffix found, using: $NPM_TAG"
+        fi
+
+        echo "Publishing with tag: $NPM_TAG"
+        yarn npm publish --dry-run --tag $NPM_TAG --access ${{ inputs.access }}
+
+    - name: Publish to registry
+      if: inputs.dry-run == 'false'
+      shell: bash
+      run: |
+        # Extract tag from GitHub ref
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+
+        # Determine npm tag based on GitHub tag
+        if [[ $TAG_NAME =~ -([A-Z]+)\. ]]; then
+          NPM_TAG=$(echo "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+          echo "Extracted environment tag: $NPM_TAG"
+        else
+          NPM_TAG="latest"
+          echo "No environment suffix found, using: $NPM_TAG"
+        fi
+
+        echo "Publishing with tag: $NPM_TAG"
+        yarn npm publish --tag $NPM_TAG --access ${{ inputs.access }}
