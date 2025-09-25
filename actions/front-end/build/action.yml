@@ -17,8 +17,8 @@ inputs:
     description: "Build command to run"
     required: false
     default: "yarn run build:storybook"
-  artifact-path:
-    description: "Path to the build artifacts"
+  artifact-paths:
+    description: "Paths to the build artifacts (one per line or comma-separated)"
     required: false
     default: "storybook/"
 
