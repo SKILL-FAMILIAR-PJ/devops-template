@@ -1,21 +1,29 @@
-name: 'Build and Upload Storybook'
-description: 'Build Storybook with version update and upload artifacts'
+name: "Build and Upload Artifacts"
+description: "Build project with custom command, version update and upload artifacts"
 
 inputs:
   artifact-name:
-    description: 'Name for the build artifact'
+    description: "Name for the build artifact"
     required: true
   retention-days:
-    description: 'Artifact retention days'
+    description: "Artifact retention days"
     required: false
-    default: '1'
+    default: "1"
   update-version:
-    description: 'Whether to update package.json version from tag'
+    description: "Whether to update package.json version from tag"
     required: false
-    default: 'false'
+    default: "false"
+  build-command:
+    description: "Build command to run"
+    required: false
+    default: "yarn run build:storybook"
+  artifact-path:
+    description: "Path to the build artifacts"
+    required: false
+    default: "storybook/"
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Update package.json version
       if: inputs.update-version == 'true'
@@ -41,13 +49,13 @@ runs:
         FINAL_VERSION=$(node -p "require('./package.json').version")
         echo "Final version in package.json: $FINAL_VERSION"
 
-    - name: Build Storybook
+    - name: Build project
       shell: bash
-      run: yarn run build:storybook
+      run: ${{ inputs.build-command }}
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}
-        path: storybook/
+        path: ${{ inputs.artifact-path }}
         retention-days: ${{ inputs.retention-days }}
