@@ -15,13 +15,13 @@ A comprehensive collection of reusable GitHub Actions workflows and composite ac
 ```
 actions/
 ├── common/
+│   ├── semantic-release/    # Automated versioning and releases
+│   ├── setup-node/          # Node.js environment setup with caching
 │   └── notify-teams/        # Microsoft Teams notifications
 ├── front-end/
 │   ├── build-storybook/     # Build and upload Storybook artifacts
 │   ├── deploy-s3/           # Deploy to AWS S3 with environment folders
 │   ├── lint-and-typecheck/  # ESLint and TypeScript validation
-│   ├── semantic-release/    # Automated versioning and releases
-│   ├── setup-node/          # Node.js environment setup with caching
 │   └── sonarqube-analysis/  # SonarQube code quality analysis
 └── workflows/
     └── front-end/
