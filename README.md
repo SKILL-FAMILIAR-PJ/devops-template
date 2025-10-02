@@ -13,21 +13,34 @@ A comprehensive collection of reusable GitHub Actions workflows and composite ac
 ## 📁 Repository Structure
 
 ```
-actions/
-├── common/
-│   ├── semantic-release/    # Automated versioning and releases
-│   ├── setup-node/          # Node.js environment setup with caching
-│   └── notify-teams/        # Microsoft Teams notifications
-├── front-end/
-│   ├── build-storybook/     # Build and upload Storybook artifacts
-│   ├── deploy-s3/           # Deploy to AWS S3 with environment folders
-│   ├── lint-and-typecheck/  # ESLint and TypeScript validation
-│   └── sonarqube-analysis/  # SonarQube code quality analysis
-└── workflows/
-    └── front-end/
-        ├── branch-release.yml   # Automated releases from main branch
-        ├── pr-quality-gate.yml  # Pull request validation pipeline
-        └── tag-deployment.yml   # Tag-based deployment workflow
+.
+├── README.md
+└── actions
+    ├── common
+    │   ├── deploy
+    │   │   └── s3
+    │   │       └── action.yml
+    │   ├── notify
+    │   │   └── teams
+    │   │       └── action.yml
+    │   ├── release
+    │   │   └── semantic
+    │   │       └── action.yml
+    │   └── setup
+    │       ├── java
+    │       └── node
+    │           └── action.yml
+    └── front-end
+        ├── build
+        │   └── action.yml
+        ├── deploy
+        │   └── npm
+        │       └── action.yml
+        └── quality
+            ├── lint-and-type
+            │   └── action.yml
+            └── sonarqube
+                └── action.yml
 ```
 
 ## 🔧 Composite Actions
