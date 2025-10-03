@@ -27,4 +27,5 @@ runs:
 
     - name: Install dependencies
       shell: bash
+      if: ${{ inputs.install-command != '' }}
       run: ${{ inputs.install-command }}

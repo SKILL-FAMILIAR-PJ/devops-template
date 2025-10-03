@@ -2,12 +2,18 @@ name: "Notify Deployment Teams"
 description: "Send deployment notification to Microsoft Teams"
 
 inputs:
+  type:
+    description: "Notification type label (e.g. deploy, rollback, hotfix)"
+    required: true
   webhook-url:
     description: "Teams webhook URL"
     required: true
   deployment-url:
     description: "CloudFront domain for deployment URL"
     required: true
+  payload:
+    description: "Optional JSON payload to merge or append to the default message"
+    required: false
 
 runs:
   using: "composite"
@@ -32,41 +38,89 @@ runs:
       env:
         TEAMS_WEBHOOK_URL: ${{ inputs.webhook-url }}
         DEPLOYMENT_URL: ${{ inputs.deployment-url }}
-        TITLE_PREFIX: ${{ inputs.title-prefix }}
-        THEME_COLOR: ${{ inputs.theme-color }}
+        TYPE: ${{ inputs.type }}
+        CUSTOM_PAYLOAD: ${{ inputs.payload }}
       run: |
         TAG="${GITHUB_REF_NAME}"
-        URL="${DEPLOYMENT_URL}/${TAG}/"
+        BASE_URL="${DEPLOYMENT_URL%/}"
+        URL=""
+        if [ -n "${BASE_URL}" ]; then
+          URL="${BASE_URL}/${TAG}/"
+        fi
+
+        TYPE_RAW="${TYPE:-deployment}"
+        TYPE_LABEL="$(printf '%s' "$TYPE_RAW" | tr '[:upper:]' '[:lower:]')"
+        TYPE_DISPLAY="${TYPE_LABEL^}"
+        TITLE_VALUE="${TYPE_DISPLAY} ${TAG}"
+
+        case "${TYPE_LABEL}" in
+          rollback|hotfix|incident)
+            THEME_COLOR="d73a49"
+            ;;
+          promote|deploy)
+            THEME_COLOR="28a745"
+            ;;
+          *)
+            THEME_COLOR="6c5ce7"
+            ;;
+        esac
 
         payload=$(jq -n \
-          --arg title "$TITLE_PREFIX $TAG" \
+          --arg title "$TITLE_VALUE" \
           --arg url   "$URL" \
           --arg repo  "${{ github.repository }}" \
           --arg sha   "${{ steps.commit.outputs.sha }}" \
           --arg actor "${{ github.actor }}" \
           --arg msg   "${{ steps.commit.outputs.subject }}" \
           --arg color "$THEME_COLOR" \
+          --arg notifyType "$TYPE_DISPLAY" \
           '{
             "@type":"MessageCard",
             "@context":"https://schema.org/extensions",
             "themeColor":$color,
-            "summary":"Deployment success",
-            "title": $title,
+            "summary":($notifyType + " notification"),
+            "title": ($notifyType + ": " + $title),
             "sections": [{
-              "facts": [
-                {"name":"Repository","value":$repo},
-                {"name":"Commit","value":$sha},
-                {"name":"Message","value":$msg},
-                {"name":"Actor","value":$actor},
-                {"name":"URL","value":$url}
-              ]
+              "facts": (
+                [
+                  {"name":"Type","value":$notifyType},
+                  {"name":"Repository","value":$repo},
+                  {"name":"Commit","value":$sha},
+                  {"name":"Message","value":$msg},
+                  {"name":"Actor","value":$actor}
+                ]
+                + (if ($url|length) > 0 then [{"name":"URL","value":$url}] else [] end)
+              )
             }],
-            "potentialAction": [{
-              "@type":"OpenUri",
-              "name":"Open Deployment",
-              "targets":[{"os":"default","uri":$url}]
-            }]
+            "potentialAction": (
+              if ($url|length) > 0 then [{
+                "@type":"OpenUri",
+                "name":"Open Deployment",
+                "targets":[{"os":"default","uri":$url}]
+              }] else [] end
+            )
           }')
+
+        if [ -n "$CUSTOM_PAYLOAD" ]; then
+          if payload_json=$(printf '%s' "$CUSTOM_PAYLOAD" | jq -c . 2>/dev/null); then
+            payload=$(jq -n \
+              --argjson base "$payload" \
+              --argjson custom "$payload_json" \
+              'def deepmerge($a; $b):
+                reduce ($b | keys_unsorted[]) as $key ($a;
+                  if ($a[$key] // null) | type == "object" and ($b[$key] | type) == "object" then
+                    .[$key] = deepmerge($a[$key]; $b[$key])
+                  else
+                    .[$key] = $b[$key]
+                  end);
+               deepmerge($base; $custom)')
+          else
+            payload=$(jq -n \
+              --argjson base "$payload" \
+              --arg extra "$CUSTOM_PAYLOAD" \
+              '$base | .sections += [{"activityTitle":"Additional Details","text":$extra}]')
+          fi
+        fi
 
         curl -sS -X POST -H 'Content-Type: application/json' \
           -d "$payload" "$TEAMS_WEBHOOK_URL"
