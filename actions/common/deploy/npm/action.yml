@@ -8,6 +8,10 @@ inputs:
   node-version:
     description: "Node.js version to use"
     required: false
+  access:
+    description: "Access level for the package (e.g., public, restricted)"
+    required: false
+    default: "public"
 
 runs:
   using: "composite"
