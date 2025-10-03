@@ -29,6 +29,40 @@ runs:
       with:
         name: ${{ inputs.artifact-name }}
 
+    - name: Sync package version with tag
+      if: startsWith(github.ref, 'refs/tags/')
+      shell: bash
+      run: |
+        TAG_NAME="${GITHUB_REF#refs/tags/}"
+        VERSION="$TAG_NAME"
+        if [[ "$VERSION" == v* ]]; then
+          VERSION="${VERSION:1}"
+        fi
+
+        echo "Setting package.json version to $VERSION"
+        tmp_file="$(mktemp)"
+        jq --arg version "$VERSION" '.version = $version' package.json > "$tmp_file"
+        mv "$tmp_file" package.json
+
+        if [ -f package-lock.json ]; then
+          echo "Updating package-lock.json version to $VERSION"
+          tmp_lock="$(mktemp)"
+          jq --arg version "$VERSION" '.version = $version' package-lock.json > "$tmp_lock"
+          mv "$tmp_lock" package-lock.json
+        fi
+
+        if [ -f npm-shrinkwrap.json ]; then
+          echo "Updating npm-shrinkwrap.json version to $VERSION"
+          tmp_shrink="$(mktemp)"
+          jq --arg version "$VERSION" '.version = $version' npm-shrinkwrap.json > "$tmp_shrink"
+          mv "$tmp_shrink" npm-shrinkwrap.json
+        fi
+
+        if [ -f yarn.lock ]; then
+          echo "Detected yarn.lock; run yarn version to sync metadata"
+          yarn version --no-git-tag-version --new-version "$VERSION" >/dev/null
+        fi
+
     - name: Publish to registry
       shell: bash
       run: |
