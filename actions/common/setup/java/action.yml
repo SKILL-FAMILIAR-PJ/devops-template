@@ -1,5 +1,5 @@
-name: "Setup Node.js Environment"
-description: "Setup Node.js with caching and install dependencies"
+name: "Setup Java Environment"
+description: "Provision Java, enable build-tool caching, and install dependencies"
 
 inputs:
   java-version:
@@ -14,6 +14,14 @@ inputs:
     description: "Package installation command"
     required: false
     default: "mvn install -DskipTests"
+  build-tool:
+    description: "Build tool to cache (maven, gradle, sbt). Leave blank to disable caching."
+    required: false
+    default: "maven"
+  cache-dependency-path:
+    description: "Newline-separated path patterns passed to actions/setup-java cache-dependency-path"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -23,7 +31,8 @@ runs:
       with:
         distribution: ${{ inputs.jdk-distribution }}
         java-version: ${{ inputs.java-version }}
-        cache: maven
+        cache: ${{ inputs.build-tool }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
 
     - name: Install dependencies
       shell: bash
