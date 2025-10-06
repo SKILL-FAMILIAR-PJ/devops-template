@@ -14,6 +14,41 @@ if (!pattern || ids.length === 0) {
 const buildLink = (template, id) =>
   template.replace(/\$\{id\}/g, encodeURIComponent(id));
 
+const sanitizeUrl = (urlString) => {
+  try {
+    const url = new URL(urlString);
+    if (url.username || url.password) {
+      url.username = "";
+      url.password = "";
+    }
+    return url.toString();
+  } catch (error) {
+    return "[invalid URL]";
+  }
+};
+
+const prepareAuth = (urlString) => {
+  try {
+    const url = new URL(urlString);
+    if (url.username || url.password) {
+      const username = decodeURIComponent(url.username);
+      const password = decodeURIComponent(url.password);
+      const credentials = Buffer.from(`${username}:${password}`).toString(
+        "base64"
+      );
+      url.username = "";
+      url.password = "";
+      return {
+        url: url.toString(),
+        authHeader: `Basic ${credentials}`,
+      };
+    }
+    return { url: urlString, authHeader: null };
+  } catch (error) {
+    return { url: urlString, authHeader: null };
+  }
+};
+
 const toLine = (id, data) => {
   if (!data || !data.fields || !data.fields.summary) return null;
   const summary = data.fields.summary;
@@ -32,15 +67,24 @@ const toLine = (id, data) => {
 
 const fetchIssue = async (id) => {
   try {
-    const url = buildLink(pattern, id);
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "github-actions-teams-notify",
-      },
-    });
+    const rawUrl = buildLink(pattern, id);
+    const { url, authHeader } = prepareAuth(rawUrl);
+
+    const headers = {
+      Accept: "application/json",
+      "User-Agent": "github-actions-teams-notify",
+    };
+
+    if (authHeader) {
+      headers.Authorization = authHeader;
+    }
+
+    const response = await fetch(url, { headers });
+
     if (!response.ok) {
-      console.error(`Failed to fetch ${id}: ${response.status}`);
+      console.error(
+        `Failed to fetch ${id}: ${response.status} (${sanitizeUrl(url)})`
+      );
       return null;
     }
     const data = await response.json();
