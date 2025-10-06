@@ -17,6 +17,9 @@ inputs:
   issue-link-pattern:
     description: "Pattern to turn issue keys into links. Use ${id} as the placeholder."
     required: false
+  issue-summary-pattern:
+    description: "Pattern for fetching Jira issue details. Use ${id} as the placeholder."
+    required: false
   environment:
     description: "Environment label to display in the notification"
     required: false
@@ -38,6 +41,7 @@ runs:
       shell: bash
       env:
         ISSUE_LINK_PATTERN: ${{ inputs.issue-link-pattern }}
+        ISSUE_SUMMARY_PATTERN: ${{ inputs.issue-summary-pattern }}
       run: |
         if [ "${{ github.ref_type }}" = "tag" ]; then
           COMMIT_SHA="$(git rev-list -n 1 $GITHUB_REF_NAME)"
@@ -121,6 +125,72 @@ runs:
           echo "EOF" >> "$GITHUB_OUTPUT"
         fi
 
+        ISSUE_SUMMARIES=""
+        if [ -n "$ISSUE_SUMMARY_PATTERN" ] && [ -n "$CHANGELOG_NOTES" ]; then
+          ISSUE_SUMMARIES="$(ISSUE_SUMMARY_PATTERN="$ISSUE_SUMMARY_PATTERN" ISSUE_LINK_PATTERN="$ISSUE_LINK_PATTERN" CHANGELOG_CONTENT="$CHANGELOG_NOTES" node <<'NODE'
+            const pattern = process.env.ISSUE_SUMMARY_PATTERN || "";
+            const linkPattern = process.env.ISSUE_LINK_PATTERN || "";
+            const changelog = process.env.CHANGELOG_CONTENT || "";
+
+            const issueRegex = /\*\*\[?([A-Z][A-Z0-9]+-\d+)/g;
+            const ids = Array.from(new Set(Array.from(changelog.matchAll(issueRegex), match => match[1])));
+
+            if (!pattern || ids.length === 0) {
+              process.exit(0);
+            }
+
+            const buildLink = (template, id) => template.replace(/\$\{id\}/g, encodeURIComponent(id));
+
+            const toLine = (id, data) => {
+              if (!data || !data.fields || !data.fields.summary) return null;
+              const summary = data.fields.summary;
+              const status = data.fields.status && data.fields.status.name ? data.fields.status.name : "";
+              const type = data.fields.issuetype && data.fields.issuetype.name ? data.fields.issuetype.name : "";
+              const label = linkPattern ? `[${id}](${buildLink(linkPattern, id)})` : id;
+              const extras = [status, type].filter(Boolean).join(" · ");
+              return `* **${label}** — ${summary}${extras ? ` (${extras})` : ""}`;
+            };
+
+            const fetchIssue = async (id) => {
+              try {
+                const url = buildLink(pattern, id);
+                const response = await fetch(url, {
+                  headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'github-actions-teams-notify'
+                  }
+                });
+                if (!response.ok) {
+                  console.error(`Failed to fetch ${id}: ${response.status}`);
+                  return null;
+                }
+                const data = await response.json();
+                return toLine(id, data);
+              } catch (error) {
+                console.error(`Failed to fetch ${id}: ${error.message}`);
+                return null;
+              }
+            };
+
+            (async () => {
+              const results = await Promise.all(ids.map(fetchIssue));
+              const lines = results.filter(Boolean);
+              if (lines.length) {
+                process.stdout.write(lines.join("\n"));
+              }
+            })().catch(error => {
+              console.error(`Issue summary aggregation failed: ${error.message}`);
+            });
+            NODE
+          )"
+        fi
+
+        if [ -n "$ISSUE_SUMMARIES" ]; then
+          echo "tickets<<EOF" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$ISSUE_SUMMARIES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Send Teams notification
       shell: bash
       env:
@@ -131,6 +201,7 @@ runs:
         JOB_ENVIRONMENT: ${{ github.environment.name }}
         INPUT_ENVIRONMENT: ${{ inputs.environment }}
         INPUT_CATEGORY: ${{ inputs.category }}
+        TICKET_SUMMARIES: ${{ steps.commit.outputs.tickets }}
         CHANGELOG_NOTES: ${{ steps.commit.outputs.changelog }}
         REPOSITORY_FULL_NAME: ${{ github.repository }}
       run: |
@@ -147,6 +218,7 @@ runs:
         TITLE_VALUE="${TYPE_DISPLAY} ${TAG}"
         ENVIRONMENT_LABEL="${INPUT_ENVIRONMENT:-${JOB_ENVIRONMENT:-}}"
         CATEGORY_LABEL="${INPUT_CATEGORY:-}"
+        TICKETS_VALUE="${TICKET_SUMMARIES:-}"
 
         REPO_NAME="${REPOSITORY_FULL_NAME##*/}"
 
@@ -173,6 +245,7 @@ runs:
           --arg notifyType  "$TYPE_DISPLAY" \
           --arg environment "$ENVIRONMENT_LABEL" \
           --arg notes       "$CHANGELOG_NOTES" \
+          --arg tickets     "$TICKETS_VALUE" \
           --arg category    "$CATEGORY_LABEL" \
           '{
             "@type":"MessageCard",
@@ -180,25 +253,32 @@ runs:
             "themeColor":$color,
             "summary":($notifyType + " notification" + (if ($environment|length) > 0 then " (" + $environment + ")" else "" end)),
             "title": ($notifyType + ": " + $title + (if ($environment|length) > 0 then " · " + $environment else "" end)),
-            "sections": ([{
-              "facts": (
-                [
-                  {"name":"Type","value":$notifyType}
-                ]
-                + (if ($category|length) > 0 then [{"name":"Category","value":$category}] else [] end)
-                + [
-                  {"name":"Repository","value":$repository},
-                  {"name":"Commit","value":$sha},
-                  {"name":"Message","value":$msg},
-                  {"name":"Actor","value":$actor}
-                ]
-                + (if ($environment|length) > 0 then [{"name":"Environment","value":$environment}] else [] end)
-                + (if ($url|length) > 0 then [{"name":"URL","value":$url}] else [] end)
-              )
-            }] + (if ($notes|length) > 0 then [{
-              "title":"Changelog",
-              "text":$notes
-            }] else [] end)),
+            "sections": (
+              [{
+                "facts": (
+                  [
+                    {"name":"Type","value":$notifyType}
+                  ]
+                  + (if ($category|length) > 0 then [{"name":"Category","value":$category}] else [] end)
+                  + [
+                    {"name":"Repository","value":$repository},
+                    {"name":"Commit","value":$sha},
+                    {"name":"Message","value":$msg},
+                    {"name":"Actor","value":$actor}
+                  ]
+                  + (if ($environment|length) > 0 then [{"name":"Environment","value":$environment}] else [] end)
+                  + (if ($url|length) > 0 then [{"name":"URL","value":$url}] else [] end)
+                )
+              }]
+              + (if ($notes|length) > 0 then [{
+                "title":"Changelog",
+                "text":$notes
+              }] else [] end)
+              + (if ($tickets|length) > 0 then [{
+                "title":"Jira Tickets",
+                "text":$tickets
+              }] else [] end)
+            ),
             "potentialAction": (
               if ($url|length) > 0 then [{
                 "@type":"OpenUri",
