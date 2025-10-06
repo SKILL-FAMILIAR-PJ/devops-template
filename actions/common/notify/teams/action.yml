@@ -26,6 +26,10 @@ inputs:
   category:
     description: "Category label to include alongside the notification details"
     required: false
+  theme-color:
+    description: "Teams message card theme color (hex without #, e.g. 28a745 for green)"
+    required: false
+    default: "0078D4"
 
 runs:
   using: "composite"
@@ -86,23 +90,19 @@ runs:
                 const TOKEN = "${id}";
                 const data = fs.readFileSync(0, "utf8");
 
-                const withBoldHeadings = data.replace(
-                  /^###\s+(.+)$/gm,
-                  (_, title) => `**${title.trim()}**`
-                );
+                const withoutHeadings = data.replace(/^###\s+.+$/gm, "");
 
-                const trimmed = withBoldHeadings.replace(/^\s+/, "");
-                const withSeparators = trimmed
-                  .split(/\n\n(?=\*\*)/)
-                  .join("\n\n---\n\n");
+                const trimmed = withoutHeadings
+                  .replace(/^\s+/, "")
+                  .replace(/\n{3,}/g, "\n\n");
 
                 if (!pattern) {
-                  process.stdout.write(withSeparators);
+                  process.stdout.write("**Commits**\\n\\n" + trimmed);
                   process.exit(0);
                 }
 
                 const bullet = /(\*\*)([A-Z][A-Z0-9]+-\d+)(:?)(\*\*)/g;
-                const linked = withSeparators.replace(
+                const linked = trimmed.replace(
                   bullet,
                   (_, prefix, issue, maybeColon, suffix) => {
                     const link = pattern.split(TOKEN).join(issue);
@@ -110,7 +110,7 @@ runs:
                   }
                 );
 
-                process.stdout.write(linked);
+                process.stdout.write("**Commits**\\n\\n" + linked);
             '
           )"
         fi
@@ -146,6 +146,7 @@ runs:
         JOB_ENVIRONMENT: ${{ github.environment.name }}
         INPUT_ENVIRONMENT: ${{ inputs.environment }}
         INPUT_CATEGORY: ${{ inputs.category }}
+        INPUT_THEME_COLOR: ${{ inputs.theme-color }}
         TICKET_SUMMARIES: ${{ steps.commit.outputs.tickets }}
         CHANGELOG_NOTES: ${{ steps.commit.outputs.changelog }}
         REPOSITORY_FULL_NAME: ${{ github.repository }}
@@ -167,17 +168,22 @@ runs:
 
         REPO_NAME="${REPOSITORY_FULL_NAME##*/}"
 
-        case "${TYPE_LABEL}" in
-          rollback|hotfix|incident)
-            THEME_COLOR="d73a49"
-            ;;
-          promote|deploy)
-            THEME_COLOR="28a745"
-            ;;
-          *)
-            THEME_COLOR="6c5ce7"
-            ;;
-        esac
+        # Use input theme-color if provided, otherwise determine by type
+        if [ -n "$INPUT_THEME_COLOR" ]; then
+          THEME_COLOR="$INPUT_THEME_COLOR"
+        else
+          case "${TYPE_LABEL}" in
+            rollback|hotfix|incident)
+              THEME_COLOR="d73a49"
+              ;;
+            promote|deploy)
+              THEME_COLOR="28a745"
+              ;;
+            *)
+              THEME_COLOR="6c5ce7"
+              ;;
+          esac
+        fi
 
         payload=$(jq -n \
           --arg title       "$TITLE_VALUE" \
