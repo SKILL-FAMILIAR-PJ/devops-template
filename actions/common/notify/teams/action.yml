@@ -62,65 +62,67 @@ runs:
               /^\+\+\+/ {next}
               !/^\+/ {next}
               {
-                line = substr($0, 2)
-                if (!removed_heading && line ~ /^# /) {
-                  removed_heading = 1
-                  next
-                }
-                if (removed_heading && !removed_blank && line ~ /^$/) {
-                  removed_blank = 1
-                  next
-                }
-                print line
+                ISSUE_SUMMARIES=""
+                if [ -n "$ISSUE_SUMMARY_PATTERN" ] && [ -n "$CHANGELOG_NOTES" ]; then
+                  SUMMARY_SCRIPT="$(mktemp)"
+                  cat <<'NODE' > "$SUMMARY_SCRIPT"
+        const pattern = process.env.ISSUE_SUMMARY_PATTERN || "";
+        const linkPattern = process.env.ISSUE_LINK_PATTERN || "";
+        const changelog = process.env.CHANGELOG_CONTENT || "";
+
+        const issueRegex = /\*\*\[?([A-Z][A-Z0-9]+-\d+)/g;
+        const ids = Array.from(new Set(Array.from(changelog.matchAll(issueRegex), match => match[1])));
+
+        if (!pattern || ids.length === 0) {
+          process.exit(0);
+        }
+
+        const buildLink = (template, id) => template.replace(/\$\{id\}/g, encodeURIComponent(id));
+
+        const toLine = (id, data) => {
+          if (!data || !data.fields || !data.fields.summary) return null;
+          const summary = data.fields.summary;
+          const status = data.fields.status && data.fields.status.name ? data.fields.status.name : "";
+          const type = data.fields.issuetype && data.fields.issuetype.name ? data.fields.issuetype.name : "";
+          const label = linkPattern ? `[${id}](${buildLink(linkPattern, id)})` : id;
+          const extras = [status, type].filter(Boolean).join(" · ");
+          return `* **${label}** — ${summary}${extras ? ` (${extras})` : ""}`;
+        };
+
+        const fetchIssue = async (id) => {
+          try {
+            const url = buildLink(pattern, id);
+            const response = await fetch(url, {
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'github-actions-teams-notify'
               }
-            '
-          )"
-        fi
+            });
+            if (!response.ok) {
+              console.error(`Failed to fetch ${id}: ${response.status}`);
+              return null;
+            }
+            const data = await response.json();
+            return toLine(id, data);
+          } catch (error) {
+            console.error(`Failed to fetch ${id}: ${error.message}`);
+            return null;
+          }
+        };
 
-        if [ -n "$CHANGELOG_NOTES" ] && [ -n "$ISSUE_LINK_PATTERN" ]; then
-          CHANGELOG_NOTES="$(
-            printf '%s' "$CHANGELOG_NOTES" \
-            | ISSUE_LINK_PATTERN="$ISSUE_LINK_PATTERN" node -e '
-                const fs = require("fs");
-                const pattern = process.env.ISSUE_LINK_PATTERN || "";
-                const TOKEN = "${id}";
-                const data = fs.readFileSync(0, "utf8");
-
-                const withBoldHeadings = data.replace(
-                  /^###\s+(.+)$/gm,
-                  (_, title) => `**${title.trim()}**`
-                );
-
-                if (!pattern) {
-                  const trimmed = withBoldHeadings.replace(/^\s+/, "");
-                  const withSeparators = trimmed
-                    .split(/\n\n(?=\*\*)/)
-                    .join("\n\n---\n\n");
-                  process.stdout.write(withSeparators);
-                  process.exit(0);
-                }
-
-                const trimmed = withBoldHeadings.replace(/^\s+/, "");
-                const withSeparators = trimmed
-                  .split(/\n\n(?=\*\*)/)
-                  .join("\n\n---\n\n");
-
-                const bullet = /(\*\*)([A-Z][A-Z0-9]+-\d+)(:?)(\*\*)/g;
-                const linked = withSeparators.replace(
-                  bullet,
-                  (_, prefix, issue, maybeColon, suffix) => {
-                    const link = pattern.split(TOKEN).join(issue);
-                    return `${prefix}[${issue}](${link})${maybeColon}${suffix}`;
-                  }
-                );
-
-                process.stdout.write(linked);
-            '
-          )"
-        fi
-
-        if [ -n "$CHANGELOG_NOTES" ]; then
+        (async () => {
+          const results = await Promise.all(ids.map(fetchIssue));
+          const lines = results.filter(Boolean);
+          if (lines.length) {
+            process.stdout.write(lines.join("\n"));
+          }
+        })().catch(error => {
+          console.error(`Issue summary aggregation failed: ${error.message}`);
+          process.exit(1);
+        });
           echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+                  ISSUE_SUMMARIES="$(ISSUE_SUMMARY_PATTERN="$ISSUE_SUMMARY_PATTERN" ISSUE_LINK_PATTERN="$ISSUE_LINK_PATTERN" CHANGELOG_CONTENT="$CHANGELOG_NOTES" node "$SUMMARY_SCRIPT")"
+                  rm -f "$SUMMARY_SCRIPT"
           printf '%s\n' "$CHANGELOG_NOTES" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
         fi
