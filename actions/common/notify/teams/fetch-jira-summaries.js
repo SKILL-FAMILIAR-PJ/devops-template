@@ -62,7 +62,7 @@ const toLine = (id, data) => {
       : "";
   const label = linkPattern ? `[${id}](${buildLink(linkPattern, id)})` : id;
   const extras = [status, type].filter(Boolean).join(" · ");
-  return `* **${label}** — ${summary}${extras ? ` (${extras})` : ""}`;
+  return `* **${label}**: ${summary}${extras ? ` (${extras})` : ""}`;
 };
 
 const fetchIssue = async (id) => {
@@ -99,7 +99,7 @@ const fetchIssue = async (id) => {
   const results = await Promise.all(ids.map(fetchIssue));
   const lines = results.filter(Boolean);
   if (lines.length) {
-    process.stdout.write(lines.join("\n"));
+    process.stdout.write("**Issues**\n\n".concat(lines.join("\n")));
   }
 })().catch((error) => {
   console.error(`Issue summary aggregation failed: ${error.message}`);
