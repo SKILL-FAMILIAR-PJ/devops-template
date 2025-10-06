@@ -88,12 +88,21 @@ runs:
                 );
 
                 if (!pattern) {
-                  process.stdout.write(withBoldHeadings);
+                  const trimmed = withBoldHeadings.replace(/^\s+/, "");
+                  const withSeparators = trimmed
+                    .split(/\n\n(?=\*\*)/)
+                    .join("\n\n---\n\n");
+                  process.stdout.write(withSeparators);
                   process.exit(0);
                 }
 
-                const bullet = /^(\s*\*\s+\*\*)([A-Z][A-Z0-9]+-\d+)(:?)(\*\*)/gm;
-                const linked = withBoldHeadings.replace(
+                const trimmed = withBoldHeadings.replace(/^\s+/, "");
+                const withSeparators = trimmed
+                  .split(/\n\n(?=\*\*)/)
+                  .join("\n\n---\n\n");
+
+                const bullet = /(\*\*)([A-Z][A-Z0-9]+-\d+)(:?)(\*\*)/g;
+                const linked = withSeparators.replace(
                   bullet,
                   (_, prefix, issue, maybeColon, suffix) => {
                     const link = pattern.split(TOKEN).join(issue);
