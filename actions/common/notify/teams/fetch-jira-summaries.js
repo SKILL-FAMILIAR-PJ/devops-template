@@ -27,6 +27,13 @@ const sanitizeUrl = (urlString) => {
   }
 };
 
+const sanitizeMessage = (message) => {
+  return message.replace(/https?:\/\/[^:@]+:[^@]+@/g, (match) => {
+    const protocol = match.match(/^https?:\/\//)[0];
+    return `${protocol}***:***@`;
+  });
+};
+
 const prepareAuth = (urlString) => {
   try {
     const url = new URL(urlString);
@@ -90,7 +97,7 @@ const fetchIssue = async (id) => {
     const data = await response.json();
     return toLine(id, data);
   } catch (error) {
-    console.error(`Failed to fetch ${id}: ${error.message}`);
+    console.error(`Failed to fetch ${id}: ${sanitizeMessage(error.message)}`);
     return null;
   }
 };
@@ -102,6 +109,8 @@ const fetchIssue = async (id) => {
     process.stdout.write("**Issues**\n\n".concat(lines.join("\n")));
   }
 })().catch((error) => {
-  console.error(`Issue summary aggregation failed: ${error.message}`);
+  console.error(
+    `Issue summary aggregation failed: ${sanitizeMessage(error.message)}`
+  );
   process.exit(1);
 });
