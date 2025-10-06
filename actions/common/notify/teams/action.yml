@@ -115,6 +115,7 @@ runs:
         CUSTOM_PAYLOAD: ${{ inputs.payload }}
         JOB_ENVIRONMENT: ${{ github.environment.name }}
         CHANGELOG_NOTES: ${{ steps.commit.outputs.changelog }}
+        REPOSITORY_FULL_NAME: ${{ github.repository }}
       run: |
         TAG="${GITHUB_REF_NAME}"
         BASE_URL="${DEPLOYMENT_URL%/}"
@@ -128,7 +129,7 @@ runs:
         TYPE_DISPLAY="${TYPE_LABEL^}"
         TITLE_VALUE="${TYPE_DISPLAY} ${TAG}"
         ENVIRONMENT_LABEL="${JOB_ENVIRONMENT:-}"
-        REPO_NAME="${GITHUB_REPOSITORY##*/}"
+        REPO_NAME="${REPOSITORY_FULL_NAME##*/}"
 
         case "${TYPE_LABEL}" in
           rollback|hotfix|incident)
@@ -143,32 +144,32 @@ runs:
         esac
 
         payload=$(jq -n \
-          --arg title "$TITLE_VALUE" \
-          --arg url   "$URL" \
-          --arg repo  "$REPO_NAME" \
-          --arg sha   "${{ steps.commit.outputs.sha }}" \
-          --arg actor "${{ github.actor }}" \
-          --arg msg   "${{ steps.commit.outputs.subject }}" \
-          --arg color "$THEME_COLOR" \
-          --arg notifyType "$TYPE_DISPLAY" \
-          --arg envName "$ENVIRONMENT_LABEL" \
-          --arg notes "$CHANGELOG_NOTES" \
+          --arg title       "$TITLE_VALUE" \
+          --arg url         "$URL" \
+          --arg repository  "$REPO_NAME" \
+          --arg sha         "${{ steps.commit.outputs.sha }}" \
+          --arg actor       "${{ github.actor }}" \
+          --arg msg         "${{ steps.commit.outputs.subject }}" \
+          --arg color       "$THEME_COLOR" \
+          --arg notifyType  "$TYPE_DISPLAY" \
+          --arg environment "$ENVIRONMENT_LABEL" \
+          --arg notes       "$CHANGELOG_NOTES" \
           '{
             "@type":"MessageCard",
             "@context":"https://schema.org/extensions",
             "themeColor":$color,
-            "summary":($notifyType + " notification" + (if ($envName|length) > 0 then " (" + $envName + ")" else "" end)),
-            "title": ($notifyType + ": " + $title + (if ($envName|length) > 0 then " · " + $envName else "" end)),
+            "summary":($notifyType + " notification" + (if ($environment|length) > 0 then " (" + $environment + ")" else "" end)),
+            "title": ($notifyType + ": " + $title + (if ($environment|length) > 0 then " · " + $environment else "" end)),
             "sections": ([{
               "facts": (
                 [
                   {"name":"Type","value":$notifyType},
-                  {"name":"Repository","value":$repo},
+                  {"name":"Repository","value":$repository},
                   {"name":"Commit","value":$sha},
                   {"name":"Message","value":$msg},
                   {"name":"Actor","value":$actor}
                 ]
-                + (if ($envName|length) > 0 then [{"name":"Environment","value":$envName}] else [] end)
+                + (if ($environment|length) > 0 then [{"name":"Environment","value":$environment}] else [] end)
                 + (if ($url|length) > 0 then [{"name":"URL","value":$url}] else [] end)
               )
             }] + (if ($notes|length) > 0 then [{
