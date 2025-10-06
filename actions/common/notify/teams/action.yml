@@ -14,6 +14,9 @@ inputs:
   payload:
     description: "Optional JSON payload to merge or append to the default message"
     required: false
+  issue-link-pattern:
+    description: "Pattern to turn issue keys into links. Use ${id} as the placeholder."
+    required: false
 
 runs:
   using: "composite"
@@ -21,6 +24,8 @@ runs:
     - name: Resolve commit info
       id: commit
       shell: bash
+      env:
+        ISSUE_LINK_PATTERN: ${{ inputs.issue-link-pattern }}
       run: |
         if [ "${{ github.ref_type }}" = "tag" ]; then
           COMMIT_SHA="$(git rev-list -n 1 $GITHUB_REF_NAME)"
@@ -36,7 +41,57 @@ runs:
         CHANGELOG_NOTES=""
         if git show "$COMMIT_SHA:CHANGELOG.md" >/dev/null 2>&1; then
           CHANGELOG_DIFF="$(git diff "${COMMIT_SHA}^" "$COMMIT_SHA" -- CHANGELOG.md || true)"
-          CHANGELOG_NOTES="$(printf '%s\n' "$CHANGELOG_DIFF" | awk '/^\+\+\+/ {next} /^\+/ {sub(/^\+/, "", $0); print}')"
+          CHANGELOG_NOTES="$(
+            printf '%s\n' "$CHANGELOG_DIFF" | awk '
+              /^\+\+\+/ {next}
+              !/^\+/ {next}
+              {
+                line = substr($0, 2)
+                if (!removed_heading && line ~ /^# /) {
+                  removed_heading = 1
+                  next
+                }
+                if (removed_heading && !removed_blank && line ~ /^$/) {
+                  removed_blank = 1
+                  next
+                }
+                print line
+              }
+            '
+          )"
+        fi
+
+        if [ -n "$CHANGELOG_NOTES" ] && [ -n "$ISSUE_LINK_PATTERN" ]; then
+          CHANGELOG_NOTES="$(
+            printf '%s' "$CHANGELOG_NOTES" \
+            | ISSUE_LINK_PATTERN="$ISSUE_LINK_PATTERN" node -e '
+                const fs = require("fs");
+                const pattern = process.env.ISSUE_LINK_PATTERN || "";
+                const TOKEN = "${id}";
+                const data = fs.readFileSync(0, "utf8");
+
+                const withBoldHeadings = data.replace(
+                  /^###\s+(.+)$/gm,
+                  (_, title) => `**${title.trim()}**`
+                );
+
+                if (!pattern) {
+                  process.stdout.write(withBoldHeadings);
+                  process.exit(0);
+                }
+
+                const bullet = /^(\s*\*\s+\*\*)([A-Z][A-Z0-9]+-\d+)(\*\*)/gm;
+                const linked = withBoldHeadings.replace(
+                  bullet,
+                  (_, prefix, issue, suffix) => {
+                    const link = pattern.split(TOKEN).join(issue);
+                    return `${prefix}[${issue}](${link})${suffix}`;
+                  }
+                );
+
+                process.stdout.write(linked);
+            '
+          )"
         fi
 
         if [ -n "$CHANGELOG_NOTES" ]; then
@@ -62,11 +117,12 @@ runs:
           URL="${BASE_URL}/${TAG}/"
         fi
 
-        TYPE_RAW="${TYPE:-deployment}"
+        TYPE_RAW="${TYPE:-deploy}"
         TYPE_LABEL="$(printf '%s' "$TYPE_RAW" | tr '[:upper:]' '[:lower:]')"
         TYPE_DISPLAY="${TYPE_LABEL^}"
         TITLE_VALUE="${TYPE_DISPLAY} ${TAG}"
         ENVIRONMENT_LABEL="${JOB_ENVIRONMENT:-}"
+        REPO_NAME="${GITHUB_REPOSITORY##*/}"
 
         case "${TYPE_LABEL}" in
           rollback|hotfix|incident)
@@ -83,7 +139,7 @@ runs:
         payload=$(jq -n \
           --arg title "$TITLE_VALUE" \
           --arg url   "$URL" \
-          --arg repo  "${{ github.repository }}" \
+          --arg repo  "$REPO_NAME" \
           --arg sha   "${{ steps.commit.outputs.sha }}" \
           --arg actor "${{ github.actor }}" \
           --arg msg   "${{ steps.commit.outputs.subject }}" \
