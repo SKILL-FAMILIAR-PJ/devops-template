@@ -1,18 +1,18 @@
-name: 'Setup Node.js Environment'
-description: 'Setup Node.js with caching and install dependencies'
+name: "Setup Node.js Environment"
+description: "Setup Node.js with caching and install dependencies"
 
 inputs:
   node-version:
-    description: 'Node.js version'
+    description: "Node.js version"
     required: false
-    default: '20'
+    default: "20"
   install-command:
-    description: 'Package installation command'
+    description: "Package installation command"
     required: false
-    default: 'yarn install --immutable'
+    default: "yarn install --immutable"
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Setup Node.js
       uses: actions/setup-node@v5

@@ -22,7 +22,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup Node.js Environment
-      uses: SKILL-FAMILIAR-PJ/devops-template/actions/common/setup-node@main
+      uses: SKILL-FAMILIAR-PJ/devops-template/actions/common/setup/node@main
       if: ${{ inputs.node-version != '' }}
       with:
         node-version: ${{ inputs.node-version }}

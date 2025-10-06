@@ -14,7 +14,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup Node.js Environment
-      uses: SKILL-FAMILIAR-PJ/devops-template/actions/common/setup-node@main
+      uses: SKILL-FAMILIAR-PJ/devops-template/actions/common/setup/node@main
       with:
         node-version: 20
         install-command: yarn install --immutable
