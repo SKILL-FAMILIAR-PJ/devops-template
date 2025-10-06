@@ -17,6 +17,12 @@ inputs:
   issue-link-pattern:
     description: "Pattern to turn issue keys into links. Use ${id} as the placeholder."
     required: false
+  environment:
+    description: "Environment label to display in the notification"
+    required: false
+  category:
+    description: "Category label to include alongside the notification details"
+    required: false
 
 runs:
   using: "composite"
@@ -86,12 +92,12 @@ runs:
                   process.exit(0);
                 }
 
-                const bullet = /^(\s*\*\s+\*\*)([A-Z][A-Z0-9]+-\d+)(\*\*)/gm;
+                const bullet = /^(\s*\*\s+\*\*)([A-Z][A-Z0-9]+-\d+)(:?)(\*\*)/gm;
                 const linked = withBoldHeadings.replace(
                   bullet,
-                  (_, prefix, issue, suffix) => {
+                  (_, prefix, issue, maybeColon, suffix) => {
                     const link = pattern.split(TOKEN).join(issue);
-                    return `${prefix}[${issue}](${link})${suffix}`;
+                    return `${prefix}[${issue}](${link})${maybeColon}${suffix}`;
                   }
                 );
 
@@ -114,6 +120,8 @@ runs:
         TYPE: ${{ inputs.type }}
         CUSTOM_PAYLOAD: ${{ inputs.payload }}
         JOB_ENVIRONMENT: ${{ github.environment.name }}
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_CATEGORY: ${{ inputs.category }}
         CHANGELOG_NOTES: ${{ steps.commit.outputs.changelog }}
         REPOSITORY_FULL_NAME: ${{ github.repository }}
       run: |
@@ -128,7 +136,9 @@ runs:
         TYPE_LABEL="$(printf '%s' "$TYPE_RAW" | tr '[:upper:]' '[:lower:]')"
         TYPE_DISPLAY="${TYPE_LABEL^}"
         TITLE_VALUE="${TYPE_DISPLAY} ${TAG}"
-        ENVIRONMENT_LABEL="${JOB_ENVIRONMENT:-}"
+        ENVIRONMENT_LABEL="${INPUT_ENVIRONMENT:-${JOB_ENVIRONMENT:-}}"
+        CATEGORY_LABEL="${INPUT_CATEGORY:-}"
+
         REPO_NAME="${REPOSITORY_FULL_NAME##*/}"
 
         case "${TYPE_LABEL}" in
@@ -154,6 +164,7 @@ runs:
           --arg notifyType  "$TYPE_DISPLAY" \
           --arg environment "$ENVIRONMENT_LABEL" \
           --arg notes       "$CHANGELOG_NOTES" \
+          --arg category    "$CATEGORY_LABEL" \
           '{
             "@type":"MessageCard",
             "@context":"https://schema.org/extensions",
@@ -163,7 +174,10 @@ runs:
             "sections": ([{
               "facts": (
                 [
-                  {"name":"Type","value":$notifyType},
+                  {"name":"Type","value":$notifyType}
+                ]
+                + (if ($category|length) > 0 then [{"name":"Category","value":$category}] else [] end)
+                + [
                   {"name":"Repository","value":$repository},
                   {"name":"Commit","value":$sha},
                   {"name":"Message","value":$msg},
