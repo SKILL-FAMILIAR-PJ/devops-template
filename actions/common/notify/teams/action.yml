@@ -181,7 +181,7 @@ runs:
             })().catch(error => {
               console.error(`Issue summary aggregation failed: ${error.message}`);
             });
-            NODE
+          NODE
           )"
         fi
 
