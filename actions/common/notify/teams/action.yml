@@ -21,6 +21,12 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
     - name: Resolve commit info
       id: commit
       shell: bash
