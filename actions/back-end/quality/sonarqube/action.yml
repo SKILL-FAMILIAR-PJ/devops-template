@@ -26,7 +26,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: $HOME/.sonar/cache
-        key: sonar-analyzers-${{ runner.os }}-${{ inputs.sonar-host-url }}-${{ hashFiles('**/sonar-project.properties') }}
+        key: sonar-analyzers-${{ runner.os }}-${{ inputs.sonar-host-url }}-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
           sonar-analyzers-${{ runner.os }}-${{ inputs.sonar-host-url }}-
           sonar-analyzers-${{ runner.os }}-
