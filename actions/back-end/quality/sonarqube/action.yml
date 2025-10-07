@@ -34,8 +34,8 @@ runs:
     - name: Build and analyze
       shell: bash
       env:
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+        SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
         SONAR_USER_HOME: $HOME/.sonar
         SONAR_PROJECT_KEY: ${{ inputs.project-key }}
         SONAR_PROJECT_NAME: ${{ inputs.project-name }}
