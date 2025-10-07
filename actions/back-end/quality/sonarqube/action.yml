@@ -8,14 +8,16 @@ inputs:
   sonar-host-url:
     description: "SonarQube server URL"
     required: true
-  wait-for-quality-gate:
-    description: "Whether to wait for quality gate results"
-    required: false
-    default: "false"
   quality-gate-timeout:
     description: "Quality gate timeout in minutes"
     required: false
     default: "5"
+  project-key:
+    description: "SonarQube project key"
+    required: true
+  project-name:
+    description: "SonarQube project name"
+    required: true
 
 runs:
   using: "composite"
@@ -29,19 +31,12 @@ runs:
           sonar-analyzers-${{ runner.os }}-${{ inputs.sonar-host-url }}-
           sonar-analyzers-${{ runner.os }}-
 
-    - name: SonarQube Scan
-      uses: SonarSource/sonarqube-scan-action@v4
+    - name: Build and analyze
+      shell: bash
       env:
-        SONAR_TOKEN: ${{ inputs.sonar-token }}
-        SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         SONAR_USER_HOME: $HOME/.sonar
-      with:
-        args: >
-          -Dsonar.qualitygate.wait=${{ inputs.wait-for-quality-gate }}
-
-    - name: SonarQube Quality Gate
-      if: inputs.wait-for-quality-gate == 'false'
-      uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
-      env:
-        SONAR_TOKEN: ${{ inputs.sonar-token }}
-        SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
+        SONAR_PROJECT_KEY: ${{ inputs.project-key }}
+        SONAR_PROJECT_NAME: ${{ inputs.project-name }}
+      run: mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=${{ inputs.project-key }} -Dsonar.projectName='${{ inputs.project-name }}'
