@@ -35,9 +35,9 @@ runs:
       shell: bash
       env:
         SONAR_USER_HOME: $HOME/.sonar
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+        SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
       run: |
         mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
           -Dsonar.projectKey=${{ inputs.project-key }} \
-          -Dsonar.projectName='${{ inputs.project-name }}' \
-          -Dsonar.host.url=${{ inputs.sonar-host-url }} \
-          -Dsonar.token=${{ inputs.sonar-token }}
+          -Dsonar.projectName='${{ inputs.project-name }}'
