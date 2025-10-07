@@ -13,7 +13,6 @@ inputs:
   install-command:
     description: "Package installation command"
     required: false
-    default: "mvn install -DskipTests"
   build-tool:
     description: "Build tool to cache (maven, gradle, sbt). Leave blank to disable caching."
     required: false
