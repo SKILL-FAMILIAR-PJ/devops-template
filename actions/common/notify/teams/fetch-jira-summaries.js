@@ -72,6 +72,11 @@ const toLine = (id, data) => {
   return `* **${label}**: ${summary}${extras ? ` (${extras})` : ""}`;
 };
 
+const toErrorLine = (id, errorInfo) => {
+  const label = linkPattern ? `[${id}](${buildLink(linkPattern, id)})` : id;
+  return `* **${label}**: Failed to fetch (${errorInfo})`;
+};
+
 const fetchIssue = async (id) => {
   try {
     const rawUrl = buildLink(pattern, id);
@@ -89,16 +94,13 @@ const fetchIssue = async (id) => {
     const response = await fetch(url, { headers });
 
     if (!response.ok) {
-      console.error(
-        `Failed to fetch ${id}: ${response.status} (${sanitizeUrl(url)})`
-      );
-      return null;
+      const statusText = response.statusText || "Unknown Error";
+      return toErrorLine(id, `${response.status} - ${statusText}`);
     }
     const data = await response.json();
     return toLine(id, data);
   } catch (error) {
-    console.error(`Failed to fetch ${id}: ${sanitizeMessage(error.message)}`);
-    return null;
+    return toErrorLine(id, "Network Error");
   }
 };
 
