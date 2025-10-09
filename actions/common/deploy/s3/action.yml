@@ -55,10 +55,34 @@ runs:
           echo "No environment suffix found, defaulting to: $ENVIRONMENT"
         fi
 
+        # Function to sync with appropriate cache headers
+        sync_to_s3() {
+          local dest=$1
+          echo "Deploying to: $dest"
+          
+          # Sync HTML files with no-cache
+          aws s3 sync ${{ inputs.source-path }} "$dest" \
+            --exclude "*" --include "*.html" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --delete
+          
+          # Sync JS/CSS with hash in filename (long cache)
+          aws s3 sync ${{ inputs.source-path }} "$dest" \
+            --exclude "*" --include "*.js" --include "*.css" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --delete
+          
+          # Sync other files (images, fonts, etc.) with moderate cache
+          aws s3 sync ${{ inputs.source-path }} "$dest" \
+            --exclude "*.html" --exclude "*.js" --exclude "*.css" \
+            --cache-control "public, max-age=86400" \
+            --delete
+          
+          echo "Deployment complete: $dest"
+        }
+
         # Deploy to tag-specific folder
-        aws s3 sync ${{ inputs.source-path }} s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$TAG_NAME/ --delete
-        echo "Deployed to tag-specific folder: s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$TAG_NAME/"
+        sync_to_s3 "s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$TAG_NAME/"
 
         # Deploy to environment folder
-        aws s3 sync ${{ inputs.source-path }} s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$ENVIRONMENT/ --delete
-        echo "Deployed to $ENVIRONMENT folder: s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$ENVIRONMENT/"
+        sync_to_s3 "s3://${{ inputs.s3-bucket }}/${{ inputs.s3-folder }}/$ENVIRONMENT/"
