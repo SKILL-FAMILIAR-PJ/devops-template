@@ -38,6 +38,7 @@ runs:
       with:
         args: >
           -Dsonar.qualitygate.wait=${{ inputs.wait-for-quality-gate }}
+          -Dsonar.projectName=${{ github.repository }}
 
     - name: SonarQube Quality Gate
       if: inputs.wait-for-quality-gate == 'false'
