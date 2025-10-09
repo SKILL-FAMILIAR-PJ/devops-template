@@ -49,6 +49,17 @@ runs:
         FINAL_VERSION=$(node -p "require('./package.json').version")
         echo "Final version in package.json: $FINAL_VERSION"
 
+    - name: Set version environment variable
+      shell: bash
+      run: |
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          VERSION="${GITHUB_REF_NAME#v}"
+        else
+          VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")
+        fi
+        echo "VITE_APP_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "Setting VITE_APP_VERSION to: $VERSION"
+
     - name: Build project
       shell: bash
       run: ${{ inputs.build-command }}
