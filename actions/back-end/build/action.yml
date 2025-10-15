@@ -1,0 +1,187 @@
+name: ci-cd-backend-build
+description: "Build action (parameterized): determine env optionally, build & push image, produce outputs"
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: (Optional) Determine target environment
+      id: determine_env
+      shell: bash
+      if: ${{ inputs.determine_env == 'true' }}
+      run: |
+        INPUT_ENV="${{ inputs.input_env || '' }}"
+        BRANCH="${GITHUB_REF#refs/heads/}"
+        if [ -n "$INPUT_ENV" ]; then
+          TARGET="$INPUT_ENV"
+        else
+          if [ "$BRANCH" = "develop" ]; then TARGET="dev"
+          elif [ "$BRANCH" = "staging" ]; then TARGET="stg"
+          elif [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then TARGET="prd"
+          else TARGET="dev"; fi
+        fi
+        echo "target_env=${TARGET}" >> $GITHUB_OUTPUT
+
+    - name: Compute & push tag
+      id: create_tag
+      shell: bash
+      env:
+        SEMVER_BASE: ${{ inputs.semver_base }}
+        MAX_TAG_RETRIES: ${{ inputs.max_tag_retries }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+         set -euo pipefail
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "$REPO_URL"
+          git fetch --prune --unshallow --tags origin || git fetch --prune --tags origin || true
+
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          BASE="${SEMVER_BASE}"
+          if [ "$BRANCH" = "develop" ]; then
+            PREFIX="${BASE}-DEV."
+          elif [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
+            PREFIX="${BASE}-PRD."
+          else
+            echo "created=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          RETRIES=${MAX_TAG_RETRIES}
+          i=0
+          while [ $i -lt $RETRIES ]; do
+            i=$((i+1))
+            git fetch --tags --prune origin
+            MAX=0
+            TAGS=$(git tag -l "${PREFIX}*")
+            if [ -n "$TAGS" ]; then
+              while read -r t; do
+                num=${t##*.}
+                if [[ $num =~ ^[0-9]+$ ]]; then
+                  if (( num > MAX )); then
+                    MAX=$num
+                  fi
+                fi
+              done <<< "$TAGS"
+            fi
+
+            NEXT=$((MAX + 1))
+            NEW_TAG="${PREFIX}${NEXT}"
+            if git tag -a "$NEW_TAG" -m "Auto tag $NEW_TAG by $GITHUB_ACTOR on ${GITHUB_REF}" 2>/tmp/git_tag_err || true; then
+              :
+            else
+              git tag "$NEW_TAG"
+            fi
+            if git push origin "refs/tags/${NEW_TAG}"; then
+              echo "created=true" >> $GITHUB_OUTPUT
+              echo "new_tag=${NEW_TAG}" >> $GITHUB_OUTPUT
+              exit 0
+            else
+              git tag -d "$NEW_TAG" || true
+              sleep 1
+            fi
+          done
+
+          echo "created=false" >> $GITHUB_OUTPUT
+          exit 1
+
+
+    - name: Set IMAGE_TAG
+      id: image_tag
+      shell: bash
+      run: |
+        if [ "${{ steps.create_tag.outputs.created }}" = "true" ]; then
+          echo "image_tag=${{ steps.create_tag.outputs.new_tag }}" >> $GITHUB_OUTPUT
+        else
+          SHA=$(git rev-parse --short HEAD)
+          TAG="${{ inputs.semver_base }}-SNAP.${SHA}"
+          echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Compute IMAGE_URI
+      id: compute_image_uri
+      shell: bash
+      run: |
+        IMAGE_URI="${{ inputs.ecr_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com/${{ inputs.ecr_repository }}:${{ steps.image_tag.outputs.image_tag }}"
+        echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+
+    - name: Configure AWS via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.oidc_role_arn }}
+        aws-region: ${{ inputs.aws_region }}
+
+    - name: Ensure ECR repo exists
+      shell: bash
+      run: |
+        REPO="${{ inputs.ecr_repository }}"
+        aws ecr describe-repositories --repository-names "${REPO}" --region "${{ inputs.aws_region }}" >/dev/null 2>&1 || aws ecr create-repository --repository-name "${REPO}" --region "${{ inputs.aws_region }}" || true
+
+    - name: Login to ECR
+      shell: bash
+      run: aws ecr get-login-password --region ${{ inputs.aws_region }} | docker login --username AWS --password-stdin ${{ inputs.ecr_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com
+    
+    - name: Set up Docker Buildx (use docker-container builder)
+      uses: docker/setup-buildx-action@v2
+      with:
+        driver: docker-container
+        install: true
+
+    - name: Build & push
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.compute_image_uri.outputs.image_uri }}
+        platforms: linux/amd64
+        build-args: |
+          GITHUB_USERNAME=${{ github.actor }}
+          GITHUB_TOKEN=${{ inputs.packages_token }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        pull: true
+
+    - name: Prepare SSM path info (no secret values)
+      id: prepare_ssm
+      shell: bash
+      run: |
+        PARAM_PATH="${{ inputs.param_path || '/' }}${{ steps.determine_env.outputs.target_env || '' }}"
+        echo "param_path=${PARAM_PATH}" >> $GITHUB_OUTPUT
+
+outputs:
+  image_uri:
+    value: ${{ steps.compute_image_uri.outputs.image_uri }}
+  image_tag:
+    value: ${{ steps.image_tag.outputs.image_tag }}
+  param_path:
+    value: ${{ steps.prepare_ssm.outputs.param_path }}
+
+inputs:
+  determine_env:
+    required: false
+    default: 'false'
+  input_env:
+    required: false
+  github_token:
+    required: true
+  packages_token:
+    required: true
+  oidc_role_arn:
+    required: true
+  ecr_account_id:
+    required: true
+  aws_region:
+    required: true
+  ecr_repository:
+    required: true
+  semver_base:
+    required: true
+  max_tag_retries:
+    required: true
+  param_path:
+    required: false

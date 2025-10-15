@@ -1,0 +1,154 @@
+name: ci-cd-backend-release
+description: "Release action: register task definition and update ECS service"
+runs:
+  using: "composite"
+  steps:
+    - name: Configure AWS via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.oidc_role_arn }}
+        aws-region: ${{ inputs.aws_region }}
+
+    - name: Build container-defs.json (env & secrets)
+      id: build_defs
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Inputs
+        AWS_REGION="${{ inputs.aws_region }}"
+        ACCOUNT="${{ inputs.ecr_account_id }}"
+        PARAM_PATH="${{ inputs.param_path }}"
+        APP_PORT="${{ inputs.app_port }}"
+        IMAGE_URI="${{ inputs.image_uri }}"
+        SERVICE_NAME="${{ inputs.service_name }}"
+        LOG_GROUP="${{ inputs.log_group }}"
+        PORT_MAPPINGS_NAME="${{ inputs.service_name }}"
+        APP_CORS_ALLOWED_ORIGINS="${{ inputs.app_cors_allowed_origins }}"
+
+        PARAM_PATH="${PARAM_PATH:-/dev}"
+        APP_CORS_ALLOWED_ORIGINS="${APP_CORS_ALLOWED_ORIGINS:-}"
+
+        echo "[]" > env_nonsecret.json
+        append_if_set() {
+          local key="$1"; shift
+          local val="$1"
+          if [ -n "$val" ]; then
+            jq --arg name "$key" --arg value "$val" '. + [{name:$name, value:$value}]' env_nonsecret.json > /tmp/env.json && mv /tmp/env.json env_nonsecret.json
+          fi
+        }
+
+        append_if_set "PROVIDER_AWS_REGION" "$AWS_REGION"
+        append_if_set "APP_PORT" "$APP_PORT"
+        append_if_set "APP_CORS_ALLOWED_ORIGINS" "$APP_CORS_ALLOWED_ORIGINS"
+
+        echo "env_nonsecret.json contents:"
+        cat env_nonsecret.json || true
+
+        declare -A SSM_MAP
+        SSM_MAP["PROVIDER_POSTGRES_URL"]="rds/url"
+        SSM_MAP["PROVIDER_POSTGRES_USERNAME"]="rds/username"
+        SSM_MAP["PROVIDER_POSTGRES_PASSWORD"]="rds/password"
+        SSM_MAP["PROVIDER_AWS_COGNITO_CLIENT_ID"]="cognito/app-client-id"
+        SSM_MAP["PROVIDER_AWS_COGNITO_CLIENT_SECRET"]="cognito/app-client-secret"
+        SSM_MAP["PROVIDER_AWS_COGNITO_USER_POOL_ID"]="cognito/user-pool-id"
+        SSM_MAP["PROVIDER_AWS_S3_BUCKET_NAME"]="s3/s3-upload-bucket-endpoint"
+        SSM_MAP["CLOUDFRONT_API_ID"]="cloudfront/api-id"
+        SSM_MAP["CLOUDFRONT_APP_ID"]="cloudfront/app-id"
+        SSM_MAP["PROVIDER_AWS_ACCESS_KEY_ID"]="iam/read-only-access-key-id"
+        SSM_MAP["PROVIDER_AWS_SECRET_ACCESS_KEY"]="iam/read-only-secret-access-key"
+
+        echo "[]" > secrets.json
+        for VAR in "${!SSM_MAP[@]}"; do
+          SUFFIX="${SSM_MAP[$VAR]}"
+          ARN="arn:aws:ssm:${AWS_REGION}:${ACCOUNT}:parameter${PARAM_PATH}/${SUFFIX}"
+          jq --arg n "$VAR" --arg v "$ARN" '. + [{"name":$n,"valueFrom":$v}]' secrets.json > /tmp/secrets.json && mv /tmp/secrets.json secrets.json
+        done
+
+        echo "secrets.json summary:"
+        jq -r '.[].name' secrets.json | sed -e 's/^/SECRET: /' || true
+        APP_PORT_NUM="${APP_PORT}"
+        cat > container-defs.json <<EOF
+        [
+          {
+            "name": "${SERVICE_NAME}",
+            "image": "${IMAGE_URI}",
+            "essential": true,
+            "portMappings": [
+              {
+                "containerPort": ${APP_PORT_NUM},
+                "hostPort": ${APP_PORT_NUM},
+                "protocol": "tcp",
+                "name": "${PORT_MAPPINGS_NAME}"
+              }
+            ],
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "${LOG_GROUP}",
+                "awslogs-region": "${AWS_REGION}",
+                "awslogs-stream-prefix": "${SERVICE_NAME}"
+              }
+            },
+            "environment": $(cat env_nonsecret.json),
+            "secrets": $(cat secrets.json)
+          }
+        ]
+        EOF
+
+        jq '.[0] | {name: .name, image: .image, portMappings: .portMappings, logConfiguration: .logConfiguration, environment: .environment, secrets: [.secrets[].name] }' container-defs.json || true
+
+        echo "container_defs_ready=true" >> $GITHUB_OUTPUT
+        echo "container_defs_path=container-defs.json" >> $GITHUB_OUTPUT
+
+    - name: Register Task Definition
+      id: register_task
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ ! -f container-defs.json ]; then
+          echo "ERROR: container-defs.json not found"
+          ls -la
+          exit 2
+        fi
+
+        TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --family "${{ inputs.service_name }}" \
+          --requires-compatibilities FARGATE \
+          --network-mode awsvpc \
+          --cpu "${{ inputs.ecs_task_cpu }}" \
+          --memory "${{ inputs.ecs_task_memory }}" \
+          --runtime-platform "cpuArchitecture=${{ inputs.cpu_arch }},operatingSystemFamily=${{ inputs.os_family }}" \
+          --execution-role-arn "${{ inputs.ecs_task_execution_role_arn }}" \
+          --task-role-arn "${{ inputs.ecs_task_execution_role_arn }}" \
+          --container-definitions file://container-defs.json \
+          --query 'taskDefinition.taskDefinitionArn' --output text --region "${{ inputs.aws_region }}")
+        echo "new_taskdef_arn=${TASK_DEF_ARN}" >> $GITHUB_OUTPUT
+
+    - name: Update Service (force new deployment)
+      shell: bash
+      run: |
+        aws ecs update-service --cluster "${{ inputs.ecs_cluster }}" --service "${{ inputs.service_name }}" --task-definition "${{ steps.register_task.outputs.new_taskdef_arn }}" --force-new-deployment --region "${{ inputs.aws_region }}"
+        echo "service_updated=true" >> $GITHUB_OUTPUT
+
+inputs:
+  oidc_role_arn: { required: true }
+  aws_region: { required: true }
+  ecr_account_id: { required: true }
+  param_path: { required: false }
+  image_uri: { required: true }
+  service_name: { required: true }
+  ecs_cluster: { required: true }
+  log_group: { required: true }
+  app_port: { required: true }
+  provider_aws_influxdb_token: { required: false }
+  ecs_task_execution_role_arn: { required: true }
+  ecs_task_cpu: { required: true }
+  ecs_task_memory: { required: true }
+  cpu_arch: { required: true }
+  os_family: { required: true }
+  app_cors_allowed_origins: { required: false }
+
+outputs:
+  new_taskdef_arn:
+    value: ${{ steps.register_task.outputs.new_taskdef_arn }}
