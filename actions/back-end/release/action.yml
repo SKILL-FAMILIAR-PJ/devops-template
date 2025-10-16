@@ -29,7 +29,7 @@ runs:
         PARAM_PATH="${PARAM_PATH:-/dev}"
         APP_CORS_ALLOWED_ORIGINS="${APP_CORS_ALLOWED_ORIGINS:-}"
 
-        ALLOWED_INPUT="${{ inputs.allowed_env_vars:-}}"
+        ALLOWED_INPUT="${{ inputs.allowed_env_vars}}"
         declare -A ALLOWED_SET
         if [ -n "$ALLOWED_INPUT" ]; then
           # trim spaces and split by comma
