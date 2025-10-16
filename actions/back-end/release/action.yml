@@ -29,6 +29,18 @@ runs:
         PARAM_PATH="${PARAM_PATH:-/dev}"
         APP_CORS_ALLOWED_ORIGINS="${APP_CORS_ALLOWED_ORIGINS:-}"
 
+        ALLOWED_INPUT="${{ inputs.allowed_env_vars:-}}"
+        declare -A ALLOWED_SET
+        if [ -n "$ALLOWED_INPUT" ]; then
+          # trim spaces and split by comma
+          IFS=',' read -r -a tmp_arr <<< "$(echo "$ALLOWED_INPUT" | sed 's/[[:space:]]//g')"
+          for k in "${tmp_arr[@]}"; do
+            if [ -n "$k" ]; then
+              ALLOWED_SET["$k"]=1
+            fi
+          done
+        fi
+
         echo "[]" > env_nonsecret.json
         append_if_set() {
           local key="$1"; shift
@@ -52,14 +64,21 @@ runs:
         SSM_MAP["PROVIDER_AWS_COGNITO_CLIENT_ID"]="cognito/app-client-id"
         SSM_MAP["PROVIDER_AWS_COGNITO_CLIENT_SECRET"]="cognito/app-client-secret"
         SSM_MAP["PROVIDER_AWS_COGNITO_USER_POOL_ID"]="cognito/user-pool-id"
-        SSM_MAP["PROVIDER_AWS_S3_BUCKET_NAME"]="s3/s3-upload-bucket-endpoint"
-        SSM_MAP["CLOUDFRONT_API_ID"]="cloudfront/api-id"
-        SSM_MAP["CLOUDFRONT_APP_ID"]="cloudfront/app-id"
+        SSM_MAP["CLOUDFRONT_WEB_ID"]="cloudfront/web-id"
         SSM_MAP["PROVIDER_AWS_ACCESS_KEY_ID"]="iam/read-only-access-key-id"
         SSM_MAP["PROVIDER_AWS_SECRET_ACCESS_KEY"]="iam/read-only-secret-access-key"
+        SSM_MAP["PROVIDER_AWS_ACCOUNT_ID"]="iam/account-id"
 
         echo "[]" > secrets.json
         for VAR in "${!SSM_MAP[@]}"; do
+          if [ "${#ALLOWED_SET[@]}" -gt 0 ]; then
+            if [ -z "${ALLOWED_SET[$VAR]:-}" ]; then
+              continue
+            fi
+          else
+            continue
+          fi
+
           SUFFIX="${SSM_MAP[$VAR]}"
           ARN="arn:aws:ssm:${AWS_REGION}:${ACCOUNT}:parameter${PARAM_PATH}/${SUFFIX}"
           jq --arg n "$VAR" --arg v "$ARN" '. + [{"name":$n,"valueFrom":$v}]' secrets.json > /tmp/secrets.json && mv /tmp/secrets.json secrets.json
@@ -148,6 +167,7 @@ inputs:
   cpu_arch: { required: true }
   os_family: { required: true }
   app_cors_allowed_origins: { required: false }
+  allowed_env_vars: { required: false } 
 
 outputs:
   new_taskdef_arn:
