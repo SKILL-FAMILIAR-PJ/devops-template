@@ -141,7 +141,7 @@ runs:
         platforms: linux/amd64
         build-args: |
           GITHUB_USERNAME=${{ github.actor }}
-          GITHUB_TOKEN=${{ inputs.packages_token }}
+          CI_WORKER_REPOSITORY_TOKEN=${{ inputs.packages_token }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
         pull: true
