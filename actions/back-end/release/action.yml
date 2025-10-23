@@ -60,6 +60,29 @@ runs:
         append_if_set "GRPC_CLIENT_DIRECTORY_ADDRESS" "$GRPC_CLIENT_DIRECTORY_ADDRESS"
         append_if_set "GRPC_CLIENT_NOTIFICATION_ADDRESS" "$GRPC_CLIENT_NOTIFICATION_ADDRESS"
 
+        # Allow observability and framework env vars to be passed via the step environment.
+        PASSTHROUGH_ENV_VARS=(
+          "OTEL_SERVICE_NAME"
+          "OTEL_EXPORTER_OTLP_ENDPOINT"
+          "OTEL_EXPORTER_OTLP_PROTOCOL"
+          "OTEL_TRACES_EXPORTER"
+          "OTEL_METRICS_EXPORTER"
+          "OTEL_LOGS_EXPORTER"
+          "OTEL_RESOURCE_ATTRIBUTES"
+          "OTEL_TRACES_SAMPLER"
+          "OTEL_TRACES_SAMPLER_ARG"
+          "OTEL_INSTRUMENTATION_LOGGING_MDC_INJECTION"
+          "OTEL_INSTRUMENTATION_COMMON_SUPPRESS_HTTP_URL_PARAMETERS"
+          "OTEL_EXPORTER_OTLP_TIMEOUT"
+          "OTEL_EXPORTER_OTLP_COMPRESSION"
+          "SPRING_PROFILES_ACTIVE"
+        )
+
+        for VAR in "${PASSTHROUGH_ENV_VARS[@]}"; do
+          VALUE="${!VAR:-}"
+          append_if_set "$VAR" "$VALUE"
+        done
+
         echo "env_nonsecret.json contents:"
         cat env_nonsecret.json || true
 
@@ -162,27 +185,68 @@ runs:
         echo "service_updated=true" >> $GITHUB_OUTPUT
 
 inputs:
-  oidc_role_arn: { required: true }
-  aws_region: { required: true }
-  ecr_account_id: { required: true }
-  param_path: { required: false }
-  image_uri: { required: true }
-  service_name: { required: true }
-  ecs_cluster: { required: true }
-  log_group: { required: true }
-  app_port: { required: true }
-  provider_aws_influxdb_token: { required: false }
-  ecs_task_execution_role_arn: { required: true }
-  ecs_task_cpu: { required: true }
-  ecs_task_memory: { required: true }
-  cpu_arch: { required: true }
-  os_family: { required: true }
-  app_cors_allowed_origins: { required: false }
-  allowed_env_vars: { required: false } 
-  grpc_client_auth_address: { required: false }
-  grpc_client_directory_address: { required: false }
-  grpc_client_notification_address: { required: false }
+  oidc_role_arn:
+    description: "OIDC role ARN assumed for AWS operations"
+    required: true
+  aws_region:
+    description: "AWS region for ECS and SSM operations"
+    required: true
+  ecr_account_id:
+    description: "AWS account ID that hosts the container image"
+    required: true
+  param_path:
+    description: "Base SSM path prefix (e.g. /dev)"
+    required: false
+  image_uri:
+    description: "Full image URI pushed to ECR"
+    required: true
+  service_name:
+    description: "ECS service name to update"
+    required: true
+  ecs_cluster:
+    description: "ECS cluster name"
+    required: true
+  log_group:
+    description: "CloudWatch log group used by the task"
+    required: true
+  app_port:
+    description: "Container port to expose"
+    required: true
+  provider_aws_influxdb_token:
+    description: "Legacy input reserved for compatibility"
+    required: false
+  ecs_task_execution_role_arn:
+    description: "Task execution role ARN"
+    required: true
+  ecs_task_cpu:
+    description: "Task CPU units"
+    required: true
+  ecs_task_memory:
+    description: "Task memory in MiB"
+    required: true
+  cpu_arch:
+    description: "Task CPU architecture"
+    required: true
+  os_family:
+    description: "Task operating system family"
+    required: true
+  app_cors_allowed_origins:
+    description: "Allowed origins for CORS (optional)"
+    required: false
+  allowed_env_vars:
+    description: "Comma-separated list of secret names permitted for SSM injection"
+    required: false
+  grpc_client_auth_address:
+    description: "Optional gRPC auth service endpoint"
+    required: false
+  grpc_client_directory_address:
+    description: "Optional gRPC directory service endpoint"
+    required: false
+  grpc_client_notification_address:
+    description: "Optional gRPC notification service endpoint"
+    required: false
 
 outputs:
   new_taskdef_arn:
+    description: "ARN of the registered task definition"
     value: ${{ steps.register_task.outputs.new_taskdef_arn }}
