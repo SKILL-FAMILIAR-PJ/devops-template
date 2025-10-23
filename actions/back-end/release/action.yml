@@ -103,6 +103,7 @@ runs:
         SSM_MAP["PROVIDER_REDIS_PORT"]="redis/port"
         SSM_MAP["PROVIDER_REDIS_PASSWORD"]="redis/password"
         SSM_MAP["PROVIDER_REDIS_USERNAME"]="redis/user"
+        SSM_MAP["APP_FRONTEND_ORIGIN_ROOT"]="cloudfront/origin-root"
 
         echo "[]" > secrets.json
         for VAR in "${!SSM_MAP[@]}"; do
