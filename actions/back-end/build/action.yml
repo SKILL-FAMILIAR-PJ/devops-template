@@ -8,6 +8,27 @@ runs:
       with:
         fetch-depth: 0
 
+    - name: Cache Docker layers
+      uses: actions/cache@v4
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ inputs.ecr_repository }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-${{ inputs.ecr_repository }}-
+          ${{ runner.os }}-buildx-
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gradle/caches
+          ~/.npm
+          node_modules
+        key: ${{ runner.os }}-deps-${{ hashFiles('**/pom.xml', '**/build.gradle', '**/package-lock.json', '**/yarn.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-deps-
+
     - name: (Optional) Determine target environment
       id: determine_env
       shell: bash
@@ -142,9 +163,19 @@ runs:
         build-args: |
           GITHUB_USERNAME=${{ github.actor }}
           CI_WORKER_REPOSITORY_TOKEN=${{ inputs.packages_token }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: |
+          type=gha
+          type=local,src=/tmp/.buildx-cache
+        cache-to: |
+          type=gha,mode=max
+          type=local,dest=/tmp/.buildx-cache-new,mode=max
         pull: true
+
+    - name: Move cache
+      shell: bash
+      run: |
+        rm -rf /tmp/.buildx-cache
+        mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
 
     - name: Prepare SSM path info (no secret values)
       id: prepare_ssm
