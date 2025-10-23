@@ -33,62 +33,61 @@ runs:
         MAX_TAG_RETRIES: ${{ inputs.max_tag_retries }}
         GITHUB_TOKEN: ${{ inputs.github_token }}
       run: |
-         set -euo pipefail
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions"
-          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git remote set-url origin "$REPO_URL"
-          git fetch --prune --unshallow --tags origin || git fetch --prune --tags origin || true
+        set -euo pipefail
+         git config user.email "actions@github.com"
+         git config user.name "GitHub Actions"
+         REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+         git remote set-url origin "$REPO_URL"
+         git fetch --prune --unshallow --tags origin || git fetch --prune --tags origin || true
 
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          BASE="${SEMVER_BASE}"
-          if [ "$BRANCH" = "develop" ]; then
-            PREFIX="${BASE}-DEV."
-          elif [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
-            PREFIX="${BASE}-PRD."
-          else
-            echo "created=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+         BRANCH="${GITHUB_REF#refs/heads/}"
+         BASE="${SEMVER_BASE}"
+         if [ "$BRANCH" = "develop" ]; then
+           PREFIX="${BASE}-DEV."
+         elif [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
+           PREFIX="${BASE}-PRD."
+         else
+           echo "created=false" >> $GITHUB_OUTPUT
+           exit 0
+         fi
 
-          RETRIES=${MAX_TAG_RETRIES}
-          i=0
-          while [ $i -lt $RETRIES ]; do
-            i=$((i+1))
-            git fetch --tags --prune origin
-            MAX=0
-            TAGS=$(git tag -l "${PREFIX}*")
-            if [ -n "$TAGS" ]; then
-              while read -r t; do
-                num=${t##*.}
-                if [[ $num =~ ^[0-9]+$ ]]; then
-                  if (( num > MAX )); then
-                    MAX=$num
-                  fi
-                fi
-              done <<< "$TAGS"
-            fi
+         RETRIES=${MAX_TAG_RETRIES}
+         i=0
+         while [ $i -lt $RETRIES ]; do
+           i=$((i+1))
+           git fetch --tags --prune origin
+           MAX=0
+           TAGS=$(git tag -l "${PREFIX}*")
+           if [ -n "$TAGS" ]; then
+             while read -r t; do
+               num=${t##*.}
+               if [[ $num =~ ^[0-9]+$ ]]; then
+                 if (( num > MAX )); then
+                   MAX=$num
+                 fi
+               fi
+             done <<< "$TAGS"
+           fi
 
-            NEXT=$((MAX + 1))
-            NEW_TAG="${PREFIX}${NEXT}"
-            if git tag -a "$NEW_TAG" -m "Auto tag $NEW_TAG by $GITHUB_ACTOR on ${GITHUB_REF}" 2>/tmp/git_tag_err || true; then
-              :
-            else
-              git tag "$NEW_TAG"
-            fi
-            if git push origin "refs/tags/${NEW_TAG}"; then
-              echo "created=true" >> $GITHUB_OUTPUT
-              echo "new_tag=${NEW_TAG}" >> $GITHUB_OUTPUT
-              exit 0
-            else
-              git tag -d "$NEW_TAG" || true
-              sleep 1
-            fi
-          done
+           NEXT=$((MAX + 1))
+           NEW_TAG="${PREFIX}${NEXT}"
+           if git tag -a "$NEW_TAG" -m "Auto tag $NEW_TAG by $GITHUB_ACTOR on ${GITHUB_REF}" 2>/tmp/git_tag_err || true; then
+             :
+           else
+             git tag "$NEW_TAG"
+           fi
+           if git push origin "refs/tags/${NEW_TAG}"; then
+             echo "created=true" >> $GITHUB_OUTPUT
+             echo "new_tag=${NEW_TAG}" >> $GITHUB_OUTPUT
+             exit 0
+           else
+             git tag -d "$NEW_TAG" || true
+             sleep 1
+           fi
+         done
 
-          echo "created=false" >> $GITHUB_OUTPUT
-          exit 1
-
+         echo "created=false" >> $GITHUB_OUTPUT
+         exit 1
 
     - name: Set IMAGE_TAG
       id: image_tag
@@ -124,7 +123,7 @@ runs:
     - name: Login to ECR
       shell: bash
       run: aws ecr get-login-password --region ${{ inputs.aws_region }} | docker login --username AWS --password-stdin ${{ inputs.ecr_account_id }}.dkr.ecr.${{ inputs.aws_region }}.amazonaws.com
-    
+
     - name: Set up Docker Buildx (use docker-container builder)
       uses: docker/setup-buildx-action@v2
       with:
@@ -139,6 +138,7 @@ runs:
         push: true
         tags: ${{ steps.compute_image_uri.outputs.image_uri }}
         platforms: linux/amd64
+        target: ${{ inputs.build_target }}
         build-args: |
           GITHUB_USERNAME=${{ github.actor }}
           CI_WORKER_REPOSITORY_TOKEN=${{ inputs.packages_token }}
@@ -156,32 +156,49 @@ runs:
 outputs:
   image_uri:
     value: ${{ steps.compute_image_uri.outputs.image_uri }}
+    description: "Full ECR image URI"
   image_tag:
     value: ${{ steps.image_tag.outputs.image_tag }}
+    description: "Image tag used for the build"
   param_path:
     value: ${{ steps.prepare_ssm.outputs.param_path }}
+    description: "SSM Parameter Store base path (no secret values)"
 
 inputs:
   determine_env:
     required: false
-    default: 'false'
+    default: "false"
+    description: "Whether to determine target environment based on branch"
   input_env:
     required: false
+    description: "Explicit target environment (overrides branch-based determination)"
   github_token:
     required: true
+    description: "GitHub token for authentication"
   packages_token:
     required: true
+    description: "GitHub token for authentication"
   oidc_role_arn:
     required: true
+    description: "OIDC role ARN for AWS"
   ecr_account_id:
     required: true
+    description: "ECR account ID"
   aws_region:
     required: true
+    description: "AWS region"
   ecr_repository:
     required: true
+    description: "ECR repository name"
   semver_base:
     required: true
+    description: "Base semantic version"
   max_tag_retries:
     required: true
+    description: "Maximum number of retries for tag creation"
   param_path:
     required: false
+    description: "Base SSM Parameter Store path prefix"
+  build_target:
+    required: false
+    description: "Docker build target"
