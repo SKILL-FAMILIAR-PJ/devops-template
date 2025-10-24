@@ -8,29 +8,6 @@ runs:
       with:
         fetch-depth: 0
 
-    - name: Set IMAGE_TAG
-      id: image_tag
-      shell: bash
-      run: |
-        echo "image_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-
-    - name: (Optional) Determine target environment
-      id: determine_env
-      shell: bash
-      if: ${{ inputs.determine_env == 'true' }}
-      run: |
-        INPUT_ENV="${{ inputs.input_env || '' }}"
-        TAG="${{ github.ref_name }}"
-        if [ -n "$INPUT_ENV" ]; then
-          TARGET="$INPUT_ENV"
-        else
-          if [[ "$TAG" == *"-DEV."* ]] || [[ "$TAG" == *"dev"* ]]; then TARGET="dev"
-          elif [[ "$TAG" == *"-STG."* ]] || [[ "$TAG" == *"stg"* ]]; then TARGET="stg"
-          elif [[ "$TAG" == *"-PRD."* ]] || [[ "$TAG" == *"prd"* ]]; then TARGET="prd"
-          else TARGET="dev"; fi
-        fi
-        echo "target_env=${TARGET}" >> $GITHUB_OUTPUT
-
     - name: Cache Docker layers
       uses: actions/cache@v4
       with:
@@ -51,6 +28,99 @@ runs:
         key: ${{ runner.os }}-deps-${{ hashFiles('**/pom.xml', '**/build.gradle', '**/package-lock.json', '**/yarn.lock') }}
         restore-keys: |
           ${{ runner.os }}-deps-
+
+    - name: (Optional) Determine target environment
+      id: determine_env
+      shell: bash
+      if: ${{ inputs.determine_env == 'true' }}
+      run: |
+        INPUT_ENV="${{ inputs.input_env || '' }}"
+        BRANCH="${GITHUB_REF#refs/heads/}"
+        if [ -n "$INPUT_ENV" ]; then
+          TARGET="$INPUT_ENV"
+        else
+          if [ "$BRANCH" = "develop" ]; then TARGET="dev"
+          elif [ "$BRANCH" = "staging" ]; then TARGET="stg"
+          elif [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then TARGET="prd"
+          else TARGET="dev"; fi
+        fi
+        echo "target_env=${TARGET}" >> $GITHUB_OUTPUT
+
+    - name: Compute & push tag
+      id: create_tag
+      shell: bash
+      env:
+        SEMVER_BASE: ${{ inputs.semver_base }}
+        MAX_TAG_RETRIES: ${{ inputs.max_tag_retries }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+         git config user.email "actions@github.com"
+         git config user.name "GitHub Actions"
+         REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+         git remote set-url origin "$REPO_URL"
+         git fetch --prune --unshallow --tags origin || git fetch --prune --tags origin || true
+
+         BRANCH="${GITHUB_REF#refs/heads/}"
+         BASE="${SEMVER_BASE}"
+         if [ "$BRANCH" = "develop" ]; then
+           PREFIX="${BASE}-DEV."
+         elif [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
+           PREFIX="${BASE}-PRD."
+         else
+           echo "created=false" >> $GITHUB_OUTPUT
+           exit 0
+         fi
+
+         RETRIES=${MAX_TAG_RETRIES}
+         i=0
+         while [ $i -lt $RETRIES ]; do
+           i=$((i+1))
+           git fetch --tags --prune origin
+           MAX=0
+           TAGS=$(git tag -l "${PREFIX}*")
+           if [ -n "$TAGS" ]; then
+             while read -r t; do
+               num=${t##*.}
+               if [[ $num =~ ^[0-9]+$ ]]; then
+                 if (( num > MAX )); then
+                   MAX=$num
+                 fi
+               fi
+             done <<< "$TAGS"
+           fi
+
+           NEXT=$((MAX + 1))
+           NEW_TAG="${PREFIX}${NEXT}"
+           if git tag -a "$NEW_TAG" -m "Auto tag $NEW_TAG by $GITHUB_ACTOR on ${GITHUB_REF}" 2>/tmp/git_tag_err || true; then
+             :
+           else
+             git tag "$NEW_TAG"
+           fi
+           if git push origin "refs/tags/${NEW_TAG}"; then
+             echo "created=true" >> $GITHUB_OUTPUT
+             echo "new_tag=${NEW_TAG}" >> $GITHUB_OUTPUT
+             exit 0
+           else
+             git tag -d "$NEW_TAG" || true
+             sleep 1
+           fi
+         done
+
+         echo "created=false" >> $GITHUB_OUTPUT
+         exit 1
+
+    - name: Set IMAGE_TAG
+      id: image_tag
+      shell: bash
+      run: |
+        if [ "${{ steps.create_tag.outputs.created }}" = "true" ]; then
+          echo "image_tag=${{ steps.create_tag.outputs.new_tag }}" >> $GITHUB_OUTPUT
+        else
+          SHA=$(git rev-parse --short HEAD)
+          TAG="${{ inputs.semver_base }}-SNAP.${SHA}"
+          echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
+        fi
 
     - name: Compute IMAGE_URI
       id: compute_image_uri
@@ -88,6 +158,7 @@ runs:
         file: ./Dockerfile
         push: true
         tags: ${{ steps.compute_image_uri.outputs.image_uri }}
+        # platforms: linux/amd64
         target: ${{ inputs.build_target }}
         build-args: |
           GITHUB_USERNAME=${{ github.actor }}
@@ -130,10 +201,10 @@ inputs:
   determine_env:
     required: false
     default: "false"
-    description: "Whether to determine target environment based on tag pattern"
+    description: "Whether to determine target environment based on branch"
   input_env:
     required: false
-    description: "Explicit target environment (overrides tag-based determination)"
+    description: "Explicit target environment (overrides branch-based determination)"
   github_token:
     required: true
     description: "GitHub token for authentication"
@@ -152,6 +223,12 @@ inputs:
   ecr_repository:
     required: true
     description: "ECR repository name"
+  semver_base:
+    required: true
+    description: "Base semantic version"
+  max_tag_retries:
+    required: true
+    description: "Maximum number of retries for tag creation"
   param_path:
     required: false
     description: "Base SSM Parameter Store path prefix"
