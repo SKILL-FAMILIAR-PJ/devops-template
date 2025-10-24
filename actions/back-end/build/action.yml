@@ -158,7 +158,7 @@ runs:
         file: ./Dockerfile
         push: true
         tags: ${{ steps.compute_image_uri.outputs.image_uri }}
-        platforms: linux/amd64
+        # platforms: linux/amd64
         target: ${{ inputs.build_target }}
         build-args: |
           GITHUB_USERNAME=${{ github.actor }}
@@ -170,6 +170,8 @@ runs:
           type=gha,mode=max
           type=local,dest=/tmp/.buildx-cache-new,mode=max
         pull: true
+        provenance: false
+        sbom: false
 
     - name: Move cache
       shell: bash
