@@ -20,6 +20,7 @@ runs:
         ACCOUNT="${{ inputs.ecr_account_id }}"
         PARAM_PATH="${{ inputs.param_path }}"
         APP_PORT="${{ inputs.app_port }}"
+        APP_NAME="${{ inputs.service_name }}"
         IMAGE_URI="${{ inputs.image_uri }}"
         SERVICE_NAME="${{ inputs.service_name }}"
         LOG_GROUP="${{ inputs.log_group }}"
@@ -55,6 +56,7 @@ runs:
 
         append_if_set "PROVIDER_AWS_REGION" "$AWS_REGION"
         append_if_set "GRPC_SERVER_PORT" "$APP_PORT"
+        append_if_set "APP_NAME" "$APP_NAME"
         append_if_set "APP_CORS_ALLOWED_ORIGINS" "$APP_CORS_ALLOWED_ORIGINS"
         append_if_set "GRPC_CLIENT_AUTH_ADDRESS" "$GRPC_CLIENT_AUTH_ADDRESS"
         append_if_set "GRPC_CLIENT_DIRECTORY_ADDRESS" "$GRPC_CLIENT_DIRECTORY_ADDRESS"
