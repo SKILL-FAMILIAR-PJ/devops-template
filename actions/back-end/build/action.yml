@@ -24,10 +24,15 @@ runs:
         if [ -n "$INPUT_ENV" ]; then
           TARGET="$INPUT_ENV"
         else
-          if [[ "$TAG" == *"-DEV."* ]] || [[ "$TAG" == *"dev"* ]]; then TARGET="dev"
-          elif [[ "$TAG" == *"-STG."* ]] || [[ "$TAG" == *"stg"* ]]; then TARGET="stg"
-          elif [[ "$TAG" == *"-PRD."* ]] || [[ "$TAG" == *"prd"* ]]; then TARGET="prd"
-          else TARGET="dev"; fi
+          if [[ "$TAG" == *"-DEV."* ]]; then
+            TARGET="dev"
+          elif [[ "$TAG" == *"-STG."* ]]; then
+            TARGET="stg"
+          elif [[ "$TAG" == *"-PRD."* ]]; then
+            TARGET="prd"
+          else
+            TARGET="dev"
+          fi
         fi
         echo "target_env=${TARGET}" >> $GITHUB_OUTPUT
 
@@ -125,6 +130,9 @@ outputs:
   param_path:
     value: ${{ steps.prepare_ssm.outputs.param_path }}
     description: "SSM Parameter Store base path (no secret values)"
+  target_env:
+    value: ${{ steps.determine_env.outputs.target_env }}
+    description: "Determined target environment (dev/stg/prd)"
 
 inputs:
   determine_env:
